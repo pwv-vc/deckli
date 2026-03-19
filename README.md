@@ -48,21 +48,22 @@ deckli https://dbx.docsend.com/view/XXXXXX
 
 Output: `{deck-title}.pdf` in the current directory.
 
-### Better markdown (OCR + optional cleanup)
+### Markdown (OCR + cleanup) — on by default
 
-To get markdown alongside the PDF (same base name as the PDF):
-
-```bash
-deckli -m https://docsend.com/view/XXXXXX
-```
-
-This runs OCR (tesseract.js) on each slide and writes **`{name}.raw.md`** (initial extraction). The first `#` heading is updated from the DocSend slug to a **readable deck title** when a friendly filename is detected (e.g. `# RenewablesBridge` instead of `# docsend-…`). With `--cleanup`, the tool also writes **`{name}.cleaned.md`** (model-cleaned text):
+By default, the CLI runs **OCR markdown** and **model cleanup** alongside the PDF (same base name as the PDF):
 
 ```bash
-deckli -m --cleanup https://docsend.com/view/XXXXXX
+deckli https://docsend.com/view/XXXXXX
 ```
 
-`--cleanup` uses the model in `~/.deckli/config.json` (`markdownCleanupModel`). **Default is `gpt-4o-mini` via the OpenAI API** — you must set the **`OPENAI_API_KEY` environment variable** (see [OpenAI API key](#openai-api-key-environment-variable)). For fully local cleanup without API keys, set `markdownCleanupModel` to `"350m"` or `"1.2b"` (Liquid Nano Extract ONNX; first run downloads the model). Use `-m` alone for quick extraction without cleanup.
+This runs OCR (tesseract.js) on each slide and writes **`{name}.raw.md`**, then cleans it to **`{name}.cleaned.md`** using the model in `~/.deckli/config.json` (`markdownCleanupModel`). **Default model is `gpt-4o-mini` via the OpenAI API** — set **`OPENAI_API_KEY`** (see [OpenAI API key](#openai-api-key-environment-variable)). For fully local cleanup without API keys, set `markdownCleanupModel` to `"350m"` or `"1.2b"` (Liquid Nano Extract ONNX; first run downloads the model).
+
+**Opt out:**
+
+- **`--no-markdown`** — PDF (or `--images`) only; no `.md` files.
+- **`--no-cleanup`** — Keep **`{name}.raw.md`** only; skip cleaned markdown (faster, no API / local model for cleanup).
+
+The first `#` heading is updated from the DocSend slug to a **readable deck title** when a friendly filename is detected (e.g. `# RenewablesBridge` instead of `# docsend-…`).
 
 ### Title detection
 
@@ -78,8 +79,10 @@ If detection fails (no slides, empty OCR, or model error), the DocSend deck slug
 
 - **`-o, --output <path>`** — Output path: a `.pdf` filename, or a directory (then the file is `{deck-title}.pdf` inside it). For `--images`, this is the output directory.
 - **`--images`** — Save individual PNG images instead of a single PDF.
-- **`-m, --markdown`** — Create `{name}.raw.md` (OCR text from each slide). With `--cleanup`, also create `{name}.cleaned.md`.
-- **`--cleanup`** — Clean markdown with OpenAI or a local Extract model (requires `-m`). Writes `{name}.cleaned.md`.
+- **`-m, --markdown`** — Create OCR markdown (default: **on**). Use with **`--no-markdown`** to disable.
+- **`--no-markdown`** — Skip OCR markdown; PDF/images only.
+- **`--cleanup`** — Clean raw markdown with OpenAI or a local Extract model (default: **on**). Writes `{name}.cleaned.md`.
+- **`--no-cleanup`** — Skip cleanup; keep raw OCR only.
 - **`--force`** — Re-download slide images even if they are already present (output dir for `--images`, or cache for PDF). Without `--force`, existing images are reused and the tool only re-runs PDF assembly and/or markdown/cleanup/rename as requested.
 - **`--no-headless`** — Show the browser window during extraction (useful for debugging or one-off login).
 - **`--json`** — Output machine-readable JSON (no banner, no progress text; result only).
@@ -128,8 +131,8 @@ deckli logout                                 # clear all saved logins
 2. Extracts each slide’s image URL from the page’s `page_data` endpoints.
 3. Downloads all slide images in parallel with retries.
 4. If slide images are already present (output directory for `--images`, or `~/.deckli/cache/<slug>/` for PDF), skips downloading unless `--force` is used; then assembles PDF and/or runs markdown/cleanup/rename as requested.
-5. Writes the PDF and (if `-m`) `{name}.raw.md` first under the DocSend slug so you get files quickly.
-6. Detects a friendly name (first-slide text + configured model) and optionally cleans markdown with `--cleanup`, then renames the PDF and markdown files (`.raw.md`, `.cleaned.md`) to the friendly name when it differs from the slug.
+5. Writes the PDF and (unless `--no-markdown`) `{name}.raw.md` first under the DocSend slug so you get files quickly.
+6. Detects a friendly name (first-slide text + configured model) and (unless `--no-cleanup`) cleans markdown, then renames the PDF and markdown files (`.raw.md`, `.cleaned.md`) to the friendly name when it differs from the slug.
 7. Prints a **summary** framed by dim horizontal rules (no side borders), with **short path labels** (relative to the current directory, `~/…`, or filenames). Paths are **OSC 8 hyperlinks** (`file://`) in terminals that support them (VS Code, iTerm2, Ghostty, etc.) — click to open in Finder or your default app.
 
 ## Config
@@ -180,8 +183,8 @@ Models are downloaded on first use and cached. See [Liquid AI docs](https://docs
 
 - Only public decks are supported without login; for email-gated or private decks, use `deckli login <url>` for that deck first (or `--no-headless` to log in manually in a one-off run).
 - Requires Chromium installed via `playwright install chromium`.
-- `--markdown` uses OCR and can be slow on large decks; the resulting text quality depends on slide image clarity.
-- With **local** models (`350m` / `1.2b`), `--cleanup` downloads an ONNX model on first use (hundreds of MB) and runs locally. With **OpenAI** (default), cleanup requires network access and a valid API key. Cleanup runs slide-by-slide by default for local models. If local cleanup seems to stall, run with **`--debug`** to see progress.
+- OCR markdown (on by default; use **`--no-markdown`** to skip) can be slow on large decks; text quality depends on slide image clarity.
+- With **local** models (`350m` / `1.2b`), cleanup downloads an ONNX model on first use (hundreds of MB) and runs locally. With **OpenAI** (default), cleanup requires network access and a valid API key. Use **`--no-cleanup`** to skip. Cleanup runs slide-by-slide by default for local models. If local cleanup seems to stall, run with **`--debug`** to see progress.
 
 ## Development
 

@@ -139,7 +139,9 @@ export interface DownloadOptions {
   headless?: boolean;
   json?: boolean;
   debug?: boolean;
+  /** OCR markdown output. Omitted or `undefined` defaults to `true` (CLI: `--no-markdown` to disable). */
   markdown?: boolean;
+  /** Model cleanup of OCR markdown. Omitted or `undefined` defaults to `true` (CLI: `--no-cleanup` to disable). */
   cleanup?: boolean;
   force?: boolean;
 }
@@ -210,7 +212,10 @@ export async function runDownload(url: string, options: DownloadOptions = {}): P
     }
   }
 
-  if (options.markdown && options.cleanup && !json) {
+  const markdown = options.markdown ?? true;
+  const cleanup = options.cleanup ?? true;
+
+  if (markdown && cleanup && !json) {
     const modelKey = config.markdownCleanupModel ?? "gpt-4o-mini";
     console.log(`Cleanup model: ${getCleanupModelLabel(modelKey)}`);
   }
@@ -304,7 +309,7 @@ export async function runDownload(url: string, options: DownloadOptions = {}): P
     let rawMd: string | null = null;
     let finalMd: string | null = null;
     const slugRawPath = join(outputDir, deckInfo.title + ".raw.md");
-    if (options.markdown && imagePaths.length > 0) {
+    if (markdown && imagePaths.length > 0) {
       spinner.start(`${CLI_ICONS_COLOR.ocr} Extracting text (OCR)...`);
       rawMd = await ocrImagesToMarkdown(imagePaths, deckInfo.title, {
         onProgress: (cur, tot) =>
@@ -359,7 +364,7 @@ export async function runDownload(url: string, options: DownloadOptions = {}): P
       finalMd = rawMd;
       const imagesCleanedPath = join(outputDir, outputTitle + ".cleaned.md");
       const streamBufferImages = createStreamWriteBuffer(imagesCleanedPath, { json });
-      if (options.cleanup && rawMd) {
+      if (cleanup && rawMd) {
         spinner.start(`${CLI_ICONS_COLOR.cleanup} Cleaning text...`);
         finalMd = await cleanupMarkdownWithExtract(
           rawMd,
@@ -389,12 +394,12 @@ export async function runDownload(url: string, options: DownloadOptions = {}): P
           writeFileSync(rawPath, rawMd!, "utf-8");
           unlinkSync(slugRawPath);
         }
-        if (options.cleanup && finalMd !== rawMd) {
+        if (cleanup && finalMd !== rawMd) {
           writeFileSync(cleanedPath, finalMd, "utf-8");
           markdownPath = cleanedPath;
         } else {
           markdownPath = outputTitle !== deckInfo.title ? rawPath : slugRawPath;
-          if (options.cleanup && finalMd === rawMd && existsSync(imagesCleanedPath)) {
+          if (cleanup && finalMd === rawMd && existsSync(imagesCleanedPath)) {
             unlinkSync(imagesCleanedPath);
           }
         }
@@ -437,7 +442,7 @@ export async function runDownload(url: string, options: DownloadOptions = {}): P
         rawMarkdownChars: rawMd.length,
         rawMarkdownBytes: Buffer.byteLength(rawMd, "utf-8"),
       }),
-      ...(options.cleanup && finalMd != null && finalMd !== rawMd && {
+      ...(cleanup && finalMd != null && finalMd !== rawMd && {
         cleanedMarkdownChars: finalMd.length,
         cleanedMarkdownBytes: Buffer.byteLength(finalMd, "utf-8"),
       }),
@@ -508,7 +513,7 @@ export async function runDownload(url: string, options: DownloadOptions = {}): P
 
   let rawMd: string | null = null;
   const slugRawPath = resolveMarkdownPathForPdf(slugPdfPath, "raw");
-  if (options.markdown && imagePaths.length > 0) {
+  if (markdown && imagePaths.length > 0) {
     spinner.start(`${CLI_ICONS_COLOR.ocr} Extracting text (OCR)...`);
     rawMd = await ocrImagesToMarkdown(imagePaths, deckInfo.title, {
       onProgress: (cur, tot) =>
@@ -569,7 +574,7 @@ export async function runDownload(url: string, options: DownloadOptions = {}): P
         : resolveMarkdownPathForPdf(slugPdfPath, "cleaned");
     mkdirSync(dirname(cleanedPathForStream), { recursive: true });
     const streamBufferPdf = createStreamWriteBuffer(cleanedPathForStream, { json });
-    if (options.cleanup && rawMd) {
+    if (cleanup && rawMd) {
       spinner.start(`${CLI_ICONS_COLOR.cleanup} Cleaning text...`);
       finalMd = await cleanupMarkdownWithExtract(
         rawMd,
@@ -600,7 +605,7 @@ export async function runDownload(url: string, options: DownloadOptions = {}): P
         const finalCleanedPath = resolveMarkdownPathForPdf(finalPdfPath, "cleaned");
         writeFileSync(finalRawPath, rawMd!, "utf-8");
         unlinkSync(slugRawPath);
-        if (options.cleanup && finalMd !== rawMd) {
+        if (cleanup && finalMd !== rawMd) {
           writeFileSync(finalCleanedPath, finalMd, "utf-8");
           markdownPath = finalCleanedPath;
         } else {
@@ -610,14 +615,14 @@ export async function runDownload(url: string, options: DownloadOptions = {}): P
     } else {
       if (finalMd !== null) {
         markdownPath = slugRawPath;
-        if (options.cleanup && finalMd !== rawMd) {
+        if (cleanup && finalMd !== rawMd) {
           const slugCleanedPath = resolveMarkdownPathForPdf(slugPdfPath, "cleaned");
           writeFileSync(slugCleanedPath, finalMd, "utf-8");
           markdownPath = slugCleanedPath;
         }
       }
     }
-    if (options.cleanup && rawMd && finalMd === rawMd && existsSync(cleanedPathForStream)) {
+    if (cleanup && rawMd && finalMd === rawMd && existsSync(cleanedPathForStream)) {
       unlinkSync(cleanedPathForStream);
     }
   }
@@ -664,7 +669,7 @@ export async function runDownload(url: string, options: DownloadOptions = {}): P
       rawMarkdownChars: rawMd.length,
       rawMarkdownBytes: Buffer.byteLength(rawMd, "utf-8"),
     }),
-    ...(options.cleanup && finalMd != null && finalMd !== rawMd && {
+    ...(cleanup && finalMd != null && finalMd !== rawMd && {
       cleanedMarkdownChars: finalMd.length,
       cleanedMarkdownBytes: Buffer.byteLength(finalMd, "utf-8"),
     }),
@@ -686,8 +691,10 @@ export function registerDownloadCommand(program: Command): void {
     .description("Download a DocSend deck as PDF (default) or PNG images")
     .option("-o, --output <path>", "Output path: .pdf file, or directory for PDF/images")
     .option("--images", "Save individual PNG images instead of a single PDF")
-    .option("-m, --markdown", "Also create .md with OCR from each slide; use with --cleanup for cleaned text")
-    .option("--cleanup", "Clean markdown with local Extract model (requires -m); also used for title detection")
+    .option("-m, --markdown", "Create OCR markdown (default: on)")
+    .option("--no-markdown", "Skip OCR markdown; PDF/images only")
+    .option("--cleanup", "Clean markdown with OpenAI or local model (default: on)")
+    .option("--no-cleanup", "Skip cleanup; keep raw OCR text only")
     .option("--force", "Re-download slide images even if already present (cache or output dir)")
     .option("--no-headless", "Show the browser window during extraction")
     .option("--json", "Output result as JSON")
