@@ -10,8 +10,9 @@ export function registerLogoutCommand(program: Command): void {
     .description(
       "Clear saved login for a deck (give URL) or all decks (no URL). Sessions are stored per deck."
     )
-    .action(async (url: string | undefined) => {
-      const json = program.opts().json ?? false;
+    .option("--json", "Output result as JSON")
+    .action(async (url: string | undefined, options: { json?: boolean }) => {
+      const json = options.json ?? false;
       if (url?.trim()) {
         try {
           const profileKey = getProfileKeyFromUrl(url.trim());
@@ -28,7 +29,7 @@ export function registerLogoutCommand(program: Command): void {
           );
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
-          console.error(json ? JSON.stringify({ success: false, error: message }, null, 2) : formatError(message, "plain"));
+          console.error(json ? formatError(message, "json") : formatError(message, "plain"));
           process.exit(1);
         }
         return;

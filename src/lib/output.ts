@@ -3,7 +3,7 @@ import { basename, dirname, relative, sep } from "path";
 import { pathToFileURL } from "url";
 import stringWidth from "string-width";
 import pc from "picocolors";
-import { CLI_ICONS, CLI_ICONS_COLOR } from "../config/cli-icons.js";
+import { CLI_ICONS, CLI_ICONS_COLOR } from "./cli-icons.js";
 import type { DeckDownloadResult, DownloadResult } from "./types.js";
 
 /** Strip ANSI colors and OSC 8 hyperlinks for measuring visible width. */

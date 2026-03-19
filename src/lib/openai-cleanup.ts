@@ -4,6 +4,7 @@ import {
   estimateTokens,
   extractMarkdownFromStructured,
   FULL_DOC_SYSTEM_PROMPT,
+  isOpenAiModelKey,
   looksLikeStructuredOutput,
   NAME_DECK_SYSTEM_PROMPT,
   parseTitleFromJson,
@@ -13,11 +14,9 @@ import {
   SYSTEM_PROMPT,
   isPromptLeak,
 } from "./markdown-cleanup.js";
+import { debugLog } from "./logger.js";
 
-/** True when the configured model id should use the OpenAI API (e.g. gpt-4o-mini). */
-export function isOpenAiModelKey(key: string): boolean {
-  return key.startsWith("gpt-");
-}
+export { isOpenAiModelKey };
 
 function getOpenAiClient(): OpenAI | null {
   const key = process.env.OPENAI_API_KEY?.trim();
@@ -108,7 +107,7 @@ function logOpenAiDebug(
 ): void {
   if (!debug) return;
   const parts: string[] = [
-    `[deckli] OpenAI ${label}`,
+    `OpenAI ${label}`,
     `model=${model}`,
     `latency=${metrics.latencyMs}ms`,
   ];
@@ -119,7 +118,7 @@ function logOpenAiDebug(
   else if (metrics.promptTokens != null && metrics.completionTokens != null) {
     parts.push("cost=n/a (unknown model pricing)");
   }
-  console.warn(parts.join(" | "));
+  debugLog(true, parts.join(" | "));
 }
 
 /**
@@ -153,9 +152,7 @@ export async function cleanupMarkdownWithOpenAi(
   const { onProgress, debug } = options;
   const client = getOpenAiClient();
   if (!client) {
-    console.warn(
-      "[deckli] OPENAI_API_KEY is not set; skipping markdown cleanup. Set it in .env or the environment to use OpenAI models."
-    );
+    debugLog({ debug }, "OPENAI_API_KEY is not set; skipping markdown cleanup. Set it in .env or the environment to use OpenAI models.");
     return { markdown: rawMarkdown, estimatedCostUsd: null };
   }
 
@@ -171,11 +168,7 @@ export async function cleanupMarkdownWithOpenAi(
       OPENAI_MAX_COMPLETION_TOKENS,
       Math.max(4096, OPENAI_FULL_DOC_CONTEXT_BUDGET_TOKENS - inputTokens)
     );
-    if (debug) {
-      console.warn(
-        `[deckli] OpenAI full-doc cleanup (single request): estimated_input~${inputTokens} tokens, max_output_tokens=${maxTokens}`
-      );
-    }
+    debugLog({ debug }, `OpenAI full-doc cleanup (single request): estimated_input~${inputTokens} tokens, max_output_tokens=${maxTokens}`);
     onProgress?.(1, 1);
     try {
       const { content: cleaned, metrics } = await chatCompletion(
@@ -192,19 +185,12 @@ export async function cleanupMarkdownWithOpenAi(
       if (fromStruct) return { markdown: fromStruct, estimatedCostUsd: est };
       return { markdown: rawMarkdown, estimatedCostUsd: est };
     } catch (err) {
-      console.warn(
-        "[deckli] OpenAI cleanup failed:",
-        err instanceof Error ? err.message : String(err)
-      );
+      debugLog({ debug }, `OpenAI cleanup failed: ${err instanceof Error ? err.message : String(err)}`);
       return { markdown: rawMarkdown, estimatedCostUsd: null };
     }
   }
 
-  if (debug) {
-    console.warn(
-      `[deckli] OpenAI: using slide-by-slide (estimated input+reserve ~${inputTokens + outputReserve} tokens exceeds ${OPENAI_FULL_DOC_CONTEXT_BUDGET_TOKENS} budget)`
-    );
-  }
+  debugLog({ debug }, `OpenAI: using slide-by-slide (estimated input+reserve ~${inputTokens + outputReserve} tokens exceeds ${OPENAI_FULL_DOC_CONTEXT_BUDGET_TOKENS} budget)`);
 
   const total = parsed.slides.length;
   const sortedSlides = [...parsed.slides].sort((a, b) => a.index - b.index);
@@ -243,7 +229,7 @@ export async function cleanupMarkdownWithOpenAi(
 
   if (debug && total > 0) {
     const parts = [
-      `[deckli] OpenAI cleanup (all slides)`,
+      `OpenAI cleanup (all slides)`,
       `model=${modelId}`,
       `calls=${total}`,
       `latency_sum=${sumLatency}ms`,
@@ -252,7 +238,7 @@ export async function cleanupMarkdownWithOpenAi(
       `total_tokens_sum=${sumTotal}`,
     ];
     if (costCalls > 0) parts.push(`~$${sumCost.toFixed(6)} (estimated sum)`);
-    console.warn(parts.join(" | "));
+    debugLog(true, parts.join(" | "));
   }
 
   return {
@@ -278,7 +264,7 @@ export async function deriveFriendlyDeckNameWithOpenAi(
   const { maxInputTokens = 500, debug } = options;
   const client = getOpenAiClient();
   if (!client) {
-    if (debug) console.warn("[deckli] OPENAI_API_KEY missing; using fallback deck name.");
+    debugLog({ debug }, "OPENAI_API_KEY missing; using fallback deck name.");
     return { name: fallback, estimatedCostUsd: null };
   }
 
@@ -297,12 +283,7 @@ export async function deriveFriendlyDeckNameWithOpenAi(
     if (isPromptLeak(friendly)) return { name: fallback, estimatedCostUsd: est };
     return { name: friendly || fallback, estimatedCostUsd: est };
   } catch (err) {
-    if (debug) {
-      console.warn(
-        "[deckli] OpenAI title detection failed:",
-        err instanceof Error ? err.message : String(err)
-      );
-    }
+    debugLog({ debug }, `OpenAI title detection failed: ${err instanceof Error ? err.message : String(err)}`);
     return { name: fallback, estimatedCostUsd: null };
   }
 }

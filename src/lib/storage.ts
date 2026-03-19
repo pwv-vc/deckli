@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { homedir } from "os";
-import { dirname, join, isAbsolute } from "path";
+import { basename, dirname, join, isAbsolute } from "path";
 import type { Config } from "./types.js";
 import { DEFAULT_CONFIG } from "./types.js";
 
@@ -112,4 +112,53 @@ export function resolveParentOutput(output: string | undefined, cwd: string): st
 /** Full path to a deck folder: `parentOutput/<sanitized slug or title>`. */
 export function resolveDeckDir(parentOutput: string, slugOrTitle: string): string {
   return join(parentOutput, sanitizeDeckDirName(slugOrTitle));
+}
+
+export const CACHE_METADATA_FILENAME = ".deckli-cache.json";
+
+export interface CacheMetadata {
+  slideCount: number;
+  title: string;
+}
+
+function isCacheMetadata(data: unknown): data is CacheMetadata {
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    typeof (data as CacheMetadata).slideCount === "number" &&
+    typeof (data as CacheMetadata).title === "string"
+  );
+}
+
+export function readCacheMetadata(cacheDir: string): CacheMetadata | null {
+  const path = join(cacheDir, CACHE_METADATA_FILENAME);
+  if (!existsSync(path)) return null;
+  try {
+    const data = JSON.parse(readFileSync(path, "utf-8")) as unknown;
+    if (isCacheMetadata(data)) return data;
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+export function writeCacheMetadata(cacheDir: string, meta: CacheMetadata): void {
+  mkdirSync(cacheDir, { recursive: true });
+  writeFileSync(join(cacheDir, CACHE_METADATA_FILENAME), JSON.stringify(meta, null, 0), "utf-8");
+}
+
+/** OCR output is `{base}.ocr.md`; cleaned deck markdown is `{base}.md` (same base as the PDF). */
+export function resolveMarkdownPathForPdf(pdfPath: string, kind: "ocr" | "main" = "ocr"): string {
+  const base = basename(pdfPath, ".pdf");
+  const dir = dirname(pdfPath);
+  if (kind === "main") return join(dir, `${base}.md`);
+  return join(dir, `${base}.ocr.md`);
+}
+
+export function isOcrMarkdownFile(path: string): boolean {
+  return path.endsWith(".ocr.md");
+}
+
+export function isMainMarkdownFile(path: string): boolean {
+  return path.endsWith(".md") && !path.endsWith(".ocr.md");
 }

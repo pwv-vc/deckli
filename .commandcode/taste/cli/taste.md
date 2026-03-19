@@ -1,4 +1,5 @@
 # Cli
+- Default boolean feature flags to true and use `--no-X` pattern (e.g. `--no-markdown`, `--no-cleanup`) to disable them. Confidence: 0.80
 - Use pnpm as the package manager for CLI projects. Confidence: 1.00
 - Use TypeScript for CLI projects. Confidence: 0.95
 - Use tsup as the build tool for CLI projects. Confidence: 0.95

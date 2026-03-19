@@ -7,14 +7,14 @@ import {
   InvalidURLError,
 } from "./types.js";
 import { getBrowserProfileDir, hasBrowserProfile } from "./storage.js";
+import { USER_AGENT } from "./constants.js";
+import { debugLog } from "./logger.js";
 
 // Allow any subdomain (e.g. docsend.com, dbx.docsend.com, aurachatai.docsend.com). Support /view/SLUG and /view/s/SLUG.
 const DOCSEND_URL_PATTERN =
   /^https?:\/\/(?:[a-zA-Z0-9-]+\.)?docsend\.com\/(?:view\/(?:s\/)?([a-zA-Z0-9]+)|v\/([a-zA-Z0-9]+)\/([a-zA-Z0-9-]+))/;
 const VIEW_SLUG_PATTERN = /\/view\/(?:s\/)?([a-zA-Z0-9]+)/;
 const PAGE_DATA_BATCH_SIZE = 10;
-const USER_AGENT =
-  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
 // IIFE so page.evaluate(string) returns the result object, not the function (functions don't serialize)
 /** Exported for tests: script must be an IIFE so evaluate() returns the object, not the function. */
@@ -141,12 +141,6 @@ export interface ExtractOptions {
   onStatus?: (message: string) => void;
 }
 
-function debugLog(enable: boolean, ...args: unknown[]): void {
-  if (enable) {
-    console.error("[deckli debug]", ...args);
-  }
-}
-
 /** Fill email field (if present) and click Continue; return true once slide carousel is visible. */
 async function tryPassEmailGate(
   page: Page,
@@ -192,12 +186,7 @@ export async function extractSlideUrls(
 
   const report = (msg: string) => onStatus?.(msg);
 
-  let slug: string | null = null;
-  try {
-    slug = parseDocSendUrl(url);
-  } catch (e) {
-    throw e;
-  }
+  let slug: string | null = parseDocSendUrl(url);
 
   const usePersistent = profileKey !== null && hasBrowserProfile(profileKey);
   const profileDir = usePersistent ? getBrowserProfileDir(profileKey) : "";

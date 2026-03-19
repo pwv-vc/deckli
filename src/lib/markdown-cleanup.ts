@@ -1,4 +1,8 @@
 import type { MarkdownCleanupModelKey } from "./types.js";
+import { debugLog } from "./logger.js";
+import { DEFAULT_CONTEXT_LIMIT_TOKENS } from "./constants.js";
+
+export { DEFAULT_CONTEXT_LIMIT_TOKENS };
 
 const MODEL_IDS: Record<"350m" | "1.2b", string> = {
   "350m": "onnx-community/LFM2-350M-Extract-ONNX",
@@ -171,10 +175,6 @@ function getModelId(key: "350m" | "1.2b"): string {
   return MODEL_IDS["350m"];
 }
 
-function isOpenAiCleanupKey(key: string): boolean {
-  return key.startsWith("gpt-");
-}
-
 function normalizeLocalModelKey(key: unknown): "350m" | "1.2b" {
   if (key === "1.2b" || key === "350m") return key;
   return "350m";
@@ -183,7 +183,7 @@ function normalizeLocalModelKey(key: unknown): "350m" | "1.2b" {
 /** Human-readable cleanup model label for CLI (e.g. "350m (onnx-community/…)" or "gpt-4o-mini (OpenAI)"). */
 export function getCleanupModelLabel(key: MarkdownCleanupModelKey): string {
   const k = typeof key === "string" ? key : "350m";
-  if (isOpenAiCleanupKey(k)) return `${k} (OpenAI)`;
+  if (isOpenAiModelKey(k)) return `${k} (OpenAI)`;
   const local = normalizeLocalModelKey(k);
   return `${local} (${getModelId(local)})`;
 }
@@ -242,11 +242,30 @@ export interface DeriveFriendlyDeckNameOptions {
 
 const DEFAULT_MAX_INPUT_TOKENS_TITLE = 500;
 
-function titleDebugLog(options: DeriveFriendlyDeckNameOptions, msg: string): void {
-  if (options.debug) {
-    console.warn(`[deckli] ${msg}`);
+type TextGenPipeline = (
+  input: string,
+  opts?: {
+    max_new_tokens?: number;
+    temperature?: number;
+    do_sample?: boolean;
+    return_full_text?: boolean;
   }
-}
+) => Promise<Array<{ generated_text: string }>>;
+
+type TextGenPipeInstance = (
+  input: string,
+  opts?: {
+    max_new_tokens?: number;
+    temperature?: number;
+    do_sample?: boolean;
+    return_full_text?: boolean;
+    streamer?: import("@huggingface/transformers").TextStreamer;
+  }
+) => Promise<Array<{ generated_text: string }>>;
+
+type PipeWithTokenizer = TextGenPipeInstance & {
+  tokenizer: { decode: (ids: unknown, opts?: unknown) => string };
+};
 
 /**
  * Use the Extract model to derive a friendly deck name (company/product + -deck) from first-slide or full-doc text.
@@ -260,7 +279,7 @@ export async function deriveFriendlyDeckName(
 ): Promise<DeriveFriendlyDeckNameResult> {
   const { maxInputTokens = DEFAULT_MAX_INPUT_TOKENS_TITLE } = options;
   const keyStr = typeof modelKey === "string" ? modelKey : "gpt-4o-mini";
-  if (isOpenAiCleanupKey(keyStr)) {
+  if (isOpenAiModelKey(keyStr)) {
     const { deriveFriendlyDeckNameWithOpenAi } = await import("./openai-cleanup.js");
     return deriveFriendlyDeckNameWithOpenAi(firstSlideOcrText, fallback, keyStr, options);
   }
@@ -269,37 +288,36 @@ export async function deriveFriendlyDeckName(
   const maxChars = maxInputTokens * 4;
   const text = firstSlideOcrText.trim().slice(0, maxChars);
   if (!text) {
-    titleDebugLog(options, "Title detection: no input text, using fallback.");
+    debugLog(options, "Title detection: no input text, using fallback.");
     return { name: fallback, estimatedCostUsd: null };
   }
 
   const modelId = getModelId(key);
-  type TextGenPipeline = (input: string, opts?: { max_new_tokens?: number; temperature?: number; do_sample?: boolean; return_full_text?: boolean }) => Promise<Array<{ generated_text: string }>>;
   let pipe: TextGenPipeline;
 
-  titleDebugLog(options, "Loading model for title detection...");
+  debugLog(options, "Loading model for title detection...");
   try {
     const { pipeline } = await import("@huggingface/transformers");
     pipe = (await pipeline("text-generation", modelId, {
       device: "cpu",
       dtype: "q4",
     })) as TextGenPipeline;
-    titleDebugLog(options, "Title model loaded.");
+    debugLog(options, "Title model loaded.");
   } catch (err) {
-    titleDebugLog(options, `Title model load failed: ${err instanceof Error ? err.message : String(err)}, using fallback.`);
+    debugLog(options, `Title model load failed: ${err instanceof Error ? err.message : String(err)}, using fallback.`);
     return { name: fallback, estimatedCostUsd: null };
   }
 
   const prompt = buildChatPrompt(NAME_DECK_SYSTEM_PROMPT, text);
   try {
-    titleDebugLog(options, "Calling title model...");
+    debugLog(options, "Calling title model...");
     const out = await pipe(prompt, {
       max_new_tokens: 64,
       temperature: 0,
       do_sample: false,
       return_full_text: true,
     });
-    titleDebugLog(options, "Title model returned.");
+    debugLog(options, "Title model returned.");
     const generated = Array.isArray(out) && out[0] && typeof out[0].generated_text === "string"
       ? out[0].generated_text
       : "";
@@ -307,22 +325,20 @@ export async function deriveFriendlyDeckName(
     const fromJson = parseTitleFromJson(raw);
     const rawTitle = fromJson ?? raw;
     if (isPromptLeak(rawTitle)) {
-      titleDebugLog(options, "Title detection: model output looked like prompt leak, using fallback.");
+      debugLog(options, "Title detection: model output looked like prompt leak, using fallback.");
       return { name: fallback, estimatedCostUsd: null };
     }
     const friendly = sanitizeFriendlyDeckName(rawTitle);
     if (isPromptLeak(friendly)) {
-      titleDebugLog(options, "Title detection: sanitized name looked like prompt leak, using fallback.");
+      debugLog(options, "Title detection: sanitized name looked like prompt leak, using fallback.");
       return { name: fallback, estimatedCostUsd: null };
     }
     return { name: friendly || fallback, estimatedCostUsd: null };
   } catch (err) {
-    titleDebugLog(options, `Title model call failed: ${err instanceof Error ? err.message : String(err)}, using fallback.`);
+    debugLog(options, `Title model call failed: ${err instanceof Error ? err.message : String(err)}, using fallback.`);
     return { name: fallback, estimatedCostUsd: null };
   }
 }
-
-const DEFAULT_CONTEXT_LIMIT_TOKENS = 32_000;
 
 export interface CleanupMarkdownResult {
   markdown: string;
@@ -342,26 +358,6 @@ export interface CleanupMarkdownOptions {
   /** When true, log progress to stderr (e.g. full-doc vs slide-by-slide, model call start/end). */
   debug?: boolean;
 }
-
-function debugLog(options: CleanupMarkdownOptions, msg: string): void {
-  if (options.debug) {
-    console.warn(`[deckli] ${msg}`);
-  }
-}
-
-type TextGenPipeInstance = (
-  input: string,
-  opts?: {
-    max_new_tokens?: number;
-    temperature?: number;
-    do_sample?: boolean;
-    return_full_text?: boolean;
-    streamer?: import("@huggingface/transformers").TextStreamer;
-  }
-) => Promise<Array<{ generated_text: string }>>;
-
-/** Pipeline instance with tokenizer for optional streaming. */
-type PipeWithTokenizer = TextGenPipeInstance & { tokenizer: { decode: (ids: unknown, opts?: unknown) => string } };
 
 /**
  * Clean raw OCR markdown using a Liquid Nano Extract model (ONNX via Transformers.js).
@@ -498,9 +494,14 @@ export async function cleanupMarkdownWithExtract(
   options: CleanupMarkdownOptions = {}
 ): Promise<CleanupMarkdownResult> {
   const keyStr = typeof modelKey === "string" ? modelKey : "gpt-4o-mini";
-  if (isOpenAiCleanupKey(keyStr)) {
+  if (isOpenAiModelKey(keyStr)) {
     const { cleanupMarkdownWithOpenAi } = await import("./openai-cleanup.js");
     return cleanupMarkdownWithOpenAi(rawMarkdown, keyStr, options);
   }
   return cleanupMarkdownWithLocalExtract(rawMarkdown, normalizeLocalModelKey(modelKey), options);
+}
+
+/** True when the configured model id should use the OpenAI API (e.g. gpt-4o-mini). Re-exported from openai-cleanup for convenience. */
+export function isOpenAiModelKey(key: string): boolean {
+  return key.startsWith("gpt-");
 }

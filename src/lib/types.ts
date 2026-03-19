@@ -41,6 +41,29 @@ export interface Config {
   markdownCleanupFullDoc?: boolean;
 }
 
+export interface DownloadOptions {
+  output?: string;
+  /** Output format: `pdf` (default) or `png` (slides only, no assembled PDF). */
+  format?: "pdf" | "png";
+  /** @deprecated Use `format: "png"` instead. */
+  images?: boolean;
+  /**
+   * When true (default), PDF mode copies slides into `deckDir/images/` and includes them in the zip.
+   * PNG mode: when false, slide PNGs stay on disk but are omitted from the zip.
+   */
+  bundleImages?: boolean;
+  headless?: boolean;
+  json?: boolean;
+  debug?: boolean;
+  /** For email-gated decks: `?email=` on the URL and automated Continue on the modal when possible. */
+  email?: string;
+  /** OCR markdown output. Omitted or `undefined` defaults to `true` (CLI: `--no-markdown` to disable). */
+  markdown?: boolean;
+  /** Model cleanup of OCR markdown. Omitted or `undefined` defaults to `true` (CLI: `--no-cleanup` to disable). */
+  cleanup?: boolean;
+  force?: boolean;
+}
+
 export const DEFAULT_CONFIG: Config = {
   headless: true,
   concurrency: 10,

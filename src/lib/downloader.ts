@@ -1,14 +1,11 @@
 import { writeFileSync } from "fs";
 import { join } from "path";
 import type { DownloadResult } from "./types.js";
+import { USER_AGENT } from "./constants.js";
 
 const DEFAULT_CONCURRENCY = 10;
 const DEFAULT_MAX_RETRIES = 3;
 const DEFAULT_TIMEOUT_MS = 30_000;
-
-/** Match Python/extractor: browser-like UA for S3 signed URL requests */
-const USER_AGENT =
-  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
 async function downloadOne(
   url: string,

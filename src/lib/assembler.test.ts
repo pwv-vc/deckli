@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import { mkdirSync, writeFileSync, rmSync, readFileSync, existsSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
@@ -9,16 +9,23 @@ const MINIMAL_PNG_BASE64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQHwAFBQIAX8jx0gAAAABJRU5ErkJggg==";
 
 describe("assemblePdf", () => {
+  let dir: string;
+
+  afterEach(() => {
+    if (dir && existsSync(dir)) {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("throws when image_paths is empty", async () => {
-    const dir = join(tmpdir(), `docsend_test_${randomBytes(8).toString("hex")}`);
+    dir = join(tmpdir(), `docsend_test_${randomBytes(8).toString("hex")}`);
     mkdirSync(dir, { recursive: true });
     const outPdf = join(dir, "out.pdf");
     await expect(assemblePdf([], outPdf)).rejects.toThrow("image_paths must not be empty");
-    rmSync(dir, { recursive: true, force: true });
   });
 
   it("creates a PDF from PNG images", async () => {
-    const dir = join(tmpdir(), `docsend_test_${randomBytes(8).toString("hex")}`);
+    dir = join(tmpdir(), `docsend_test_${randomBytes(8).toString("hex")}`);
     mkdirSync(dir, { recursive: true });
     const pngBytes = Buffer.from(MINIMAL_PNG_BASE64, "base64");
     const slide1 = join(dir, "slide_01.png");
@@ -35,7 +42,5 @@ describe("assemblePdf", () => {
     expect(buf[1]).toBe(0x50);
     expect(buf[2]).toBe(0x44);
     expect(buf[3]).toBe(0x46);
-
-    rmSync(dir, { recursive: true, force: true });
   });
 });

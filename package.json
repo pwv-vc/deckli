@@ -20,6 +20,7 @@
     "pdf",
     "cli"
   ],
+  "files": ["dist", "README.md"],
   "license": "MIT",
   "engines": {
     "node": ">=18"

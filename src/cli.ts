@@ -7,10 +7,9 @@ import { readFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { Command, Option } from "commander";
-import { registerDownloadCommand } from "./commands/download.js";
+import { registerDownloadCommand, runDownload } from "./commands/download.js";
 import { registerLoginCommand } from "./commands/login.js";
 import { registerLogoutCommand } from "./commands/logout.js";
-import { runDownload } from "./commands/download.js";
 import { showBanner } from "./banner.js";
 import { formatError } from "./lib/output.js";
 
@@ -82,11 +81,7 @@ program
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        if (json) {
-          console.error(JSON.stringify({ success: false, error: message }, null, 2));
-        } else {
-          console.error(formatError(message, "plain"));
-        }
+        console.error(json ? formatError(message, "json") : formatError(message, "plain"));
         process.exit(1);
       }
     }

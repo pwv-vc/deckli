@@ -10,4 +10,4 @@ coverage
 .pnpm-store
 .pnpn-store/*/**
 eng.traineddata
-
+assets

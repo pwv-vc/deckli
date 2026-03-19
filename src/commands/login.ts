@@ -1,4 +1,5 @@
 import { createInterface } from "readline";
+import { mkdirSync } from "fs";
 import { chromium } from "playwright";
 import ora from "ora";
 import pc from "picocolors";
@@ -6,7 +7,6 @@ import type { Command } from "commander";
 import { getBrowserProfileDir } from "../lib/storage.js";
 import { getProfileKeyFromUrl } from "../lib/extractor.js";
 import { formatError } from "../lib/output.js";
-import { mkdirSync } from "fs";
 
 function waitForEnter(): Promise<void> {
   return new Promise((resolve) => {
@@ -24,11 +24,12 @@ export function registerLoginCommand(program: Command): void {
     .description(
       "Open browser to log in to DocSend for a specific deck; session is saved per deck (use different URLs to use different logins)"
     )
-    .action(async (url: string | undefined) => {
-      const json = program.opts().json ?? false;
+    .option("--json", "Output result as JSON")
+    .action(async (url: string | undefined, options: { json?: boolean }) => {
+      const json = options.json ?? false;
       if (!url?.trim()) {
         const msg = "URL is required. Example: deckli login https://docsend.com/view/XXXXXX";
-        console.error(json ? JSON.stringify({ success: false, error: msg }, null, 2) : formatError(msg, "plain"));
+        console.error(json ? formatError(msg, "json") : formatError(msg, "plain"));
         process.exit(1);
       }
       try {
@@ -58,7 +59,7 @@ export function registerLoginCommand(program: Command): void {
         );
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        console.error(json ? JSON.stringify({ success: false, error: message }, null, 2) : formatError(message, "plain"));
+        console.error(json ? formatError(message, "json") : formatError(message, "plain"));
         process.exit(1);
       }
     });

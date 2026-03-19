@@ -3,15 +3,15 @@ import {
   createWriteStream,
   existsSync,
   mkdirSync,
-  readdirSync,
 } from "fs";
 import { basename, join } from "path";
 import archiver from "archiver";
+import { listSlideFiles } from "./fs-utils.js";
 
 /** Copy slide_*.png from cache or source into deck `images/`. */
 export function copySlidesToBundleImages(sourceDir: string, destImagesDir: string): void {
   mkdirSync(destImagesDir, { recursive: true });
-  const files = readdirSync(sourceDir).filter((f) => f.startsWith("slide_") && f.endsWith(".png"));
+  const files = listSlideFiles(sourceDir);
   for (const f of files) {
     const src = join(sourceDir, f);
     if (existsSync(src)) {
