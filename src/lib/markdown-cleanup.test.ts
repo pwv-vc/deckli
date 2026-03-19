@@ -117,7 +117,8 @@ describe("cleanupMarkdownWithExtract", () => {
 No ## Slide headers here.
 `;
     const result = await cleanupMarkdownWithExtract(raw, "350m");
-    expect(result).toBe(raw);
+    expect(result.markdown).toBe(raw);
+    expect(result.estimatedCostUsd).toBeNull();
   });
 });
 

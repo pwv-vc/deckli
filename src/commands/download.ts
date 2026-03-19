@@ -10,9 +10,8 @@ import {
   statSync,
 } from "fs";
 import { join, dirname, basename } from "path";
-import archiver from "archiver";
 import ora from "ora";
-import type { Command } from "commander";
+import { Command, Option } from "commander";
 import { extractSlideUrls } from "../lib/extractor.js";
 import { downloadSlides } from "../lib/downloader.js";
 import { assemblePdf } from "../lib/assembler.js";
@@ -26,20 +25,36 @@ import {
 } from "../lib/markdown-cleanup.js";
 import { CLI_ICONS_COLOR } from "../config/cli-icons.js";
 import {
+  buildDownloadSummaryPayload,
   formatDownloadSummary,
   formatError,
+  type DownloadSummaryPayloadExtras,
+  type DownloadSummaryResult,
 } from "../lib/output.js";
 import {
   loadConfig,
-  resolvePdfPath,
   getSlideCacheDir,
+  resolveParentOutput,
+  resolveDeckDir,
 } from "../lib/storage.js";
 import { getProfileKeyFromUrl, parseDocSendUrl } from "../lib/extractor.js";
+import { copySlidesToBundleImages, createDeckArchive } from "../lib/deck-output.js";
 import type { DeckInfo } from "../lib/types.js";
 
-function resolveMarkdownPathForPdf(pdfPath: string, suffix: "raw" | "cleaned" = "raw"): string {
+/** OCR output is `{base}.ocr.md`; cleaned deck markdown is `{base}.md` (same base as the PDF). */
+function resolveMarkdownPathForPdf(pdfPath: string, kind: "ocr" | "main" = "ocr"): string {
   const base = basename(pdfPath, ".pdf");
-  return join(dirname(pdfPath), `${base}.${suffix}.md`);
+  const dir = dirname(pdfPath);
+  if (kind === "main") return join(dir, `${base}.md`);
+  return join(dir, `${base}.ocr.md`);
+}
+
+function isOcrMarkdownFile(path: string): boolean {
+  return path.endsWith(".ocr.md");
+}
+
+function isMainMarkdownFile(path: string): boolean {
+  return path.endsWith(".md") && !path.endsWith(".ocr.md");
 }
 
 /** Last N chars of streamed text for CLI progress preview (single line, sanitized). */
@@ -51,51 +66,6 @@ function lastCharsPreview(text: string, maxLen: number = 40): string {
 }
 
 const STREAM_WRITE_BATCH_BYTES = 1024;
-
-/** Create a ZIP archive containing PDF, markdown files, and source images. Returns the zip file path. */
-async function createDeckArchive(
-  deckTitle: string,
-  files: {
-    pdf?: string;
-    rawMarkdown?: string;
-    cleanedMarkdown?: string;
-    images: string[];
-  },
-  outputDir: string,
-  json: boolean
-): Promise<string | null> {
-  const filesToAdd: Array<{ path: string; name: string }> = [];
-  if (files.pdf && existsSync(files.pdf)) {
-    filesToAdd.push({ path: files.pdf, name: basename(files.pdf) });
-  }
-  if (files.rawMarkdown && existsSync(files.rawMarkdown)) {
-    filesToAdd.push({ path: files.rawMarkdown, name: basename(files.rawMarkdown) });
-  }
-  if (files.cleanedMarkdown && existsSync(files.cleanedMarkdown)) {
-    filesToAdd.push({ path: files.cleanedMarkdown, name: basename(files.cleanedMarkdown) });
-  }
-  for (const imgPath of files.images) {
-    if (existsSync(imgPath)) {
-      filesToAdd.push({ path: imgPath, name: basename(imgPath) });
-    }
-  }
-  if (filesToAdd.length === 0) return null;
-
-  const zipPath = join(outputDir, `${deckTitle}.zip`);
-  return new Promise((resolve, reject) => {
-    const output = createWriteStream(zipPath);
-    const archive = archiver("zip", { zlib: { level: 9 } });
-    output.on("close", () => resolve(zipPath));
-    archive.on("error", (err) => reject(err));
-    archive.pipe(output);
-
-    for (const { path, name } of filesToAdd) {
-      archive.file(path, { name });
-    }
-
-    archive.finalize();
-  });
-}
 
 /** Batched write of streamed chunks to a file; call flushStreamBuffer() after cleanup to write remainder and close. */
 function createStreamWriteBuffer(
@@ -128,14 +98,22 @@ function createStreamWriteBuffer(
     flushAndClose: () =>
       new Promise<void>((resolve, reject) => {
         if (buffer.length > 0) stream.write(buffer, "utf-8");
-        stream.end((err) => (err ? reject(err) : resolve()));
+        stream.end((err?: Error | null) => (err ? reject(err) : resolve()));
       }),
   };
 }
 
 export interface DownloadOptions {
   output?: string;
+  /** Output format: `pdf` (default) or `png` (slides only, no assembled PDF). */
+  format?: "pdf" | "png";
+  /** @deprecated Use `format: "png"` instead. */
   images?: boolean;
+  /**
+   * When true (default), PDF mode copies slides into `deckDir/images/` and includes them in the zip.
+   * PNG mode: when false, slide PNGs stay on disk but are omitted from the zip.
+   */
+  bundleImages?: boolean;
   headless?: boolean;
   json?: boolean;
   debug?: boolean;
@@ -202,6 +180,8 @@ function totalSlideBytesInDir(dir: string): number {
 
 export async function runDownload(url: string, options: DownloadOptions = {}): Promise<void> {
   const json = options.json ?? false;
+  const isPngFormat = (options.format ?? "pdf") === "png" || options.images === true;
+  const bundleImages = options.bundleImages !== false;
   const cwd = process.cwd();
   const config = loadConfig();
   const headless = options.headless ?? config.headless;
@@ -225,11 +205,11 @@ export async function runDownload(url: string, options: DownloadOptions = {}): P
   const spinner = ora(`${CLI_ICONS_COLOR.browser} Launching browser...`).start();
   const startTime = Date.now();
 
-  let deckInfo: DeckInfo;
+  let deckInfo!: DeckInfo;
   let useCachedOnly = false;
   let cacheDirFromUrl: string | null = null;
 
-  if (!options.images) {
+  if (!isPngFormat) {
     try {
       const urlSlug = parseDocSendUrl(url.trim());
       if (urlSlug) {
@@ -278,25 +258,28 @@ export async function runDownload(url: string, options: DownloadOptions = {}): P
     );
   }
 
-  if (options.images) {
-    const outputDir = options.output
-      ? join(cwd, options.output)
-      : join(cwd, deckInfo.title);
-    mkdirSync(outputDir, { recursive: true });
+  const parentOutput = resolveParentOutput(options.output, cwd);
+  const deckFolderKey = deckInfo.slug ?? deckInfo.title;
+  const deckDir = resolveDeckDir(parentOutput, deckFolderKey);
+  mkdirSync(deckDir, { recursive: true });
+
+  if (isPngFormat) {
+    const imagesDir = join(deckDir, "images");
+    mkdirSync(imagesDir, { recursive: true });
 
     let dlResult: { successes: number; failures: number; totalBytes: number; failedSlides: string[] };
-    const useExisting = !options.force && dirHasAllSlides(outputDir, deckInfo.slideCount);
+    const useExisting = !options.force && dirHasAllSlides(imagesDir, deckInfo.slideCount);
     if (useExisting) {
       if (!json) spinner.succeed(`${CLI_ICONS_COLOR.images} Using existing slide images`);
       dlResult = {
         successes: deckInfo.slideCount,
         failures: 0,
-        totalBytes: totalSlideBytesInDir(outputDir),
+        totalBytes: totalSlideBytesInDir(imagesDir),
         failedSlides: [],
       };
     } else {
       spinner.start(`${CLI_ICONS_COLOR.download} Downloading slides...`);
-      dlResult = await downloadSlides(deckInfo.imageUrls, outputDir, {
+      dlResult = await downloadSlides(deckInfo.imageUrls, imagesDir, {
         concurrency: config.concurrency,
         maxRetries: config.maxRetries,
         onSlideDone: () => {},
@@ -304,14 +287,14 @@ export async function runDownload(url: string, options: DownloadOptions = {}): P
       spinner.succeed(`${CLI_ICONS_COLOR.success} Download complete`);
     }
 
-    const slideFiles = readdirSync(outputDir)
+    const slideFiles = readdirSync(imagesDir)
       .filter((f) => f.startsWith("slide_") && f.endsWith(".png"))
       .sort();
-    const imagePaths = slideFiles.map((f) => join(outputDir, f));
+    const imagePaths = slideFiles.map((f) => join(imagesDir, f));
 
     let rawMd: string | null = null;
     let finalMd: string | null = null;
-    const slugRawPath = join(outputDir, deckInfo.title + ".raw.md");
+    const slugRawPath = join(deckDir, deckInfo.title + ".ocr.md");
     if (markdown && imagePaths.length > 0) {
       spinner.start(`${CLI_ICONS_COLOR.ocr} Extracting text (OCR)...`);
       rawMd = await ocrImagesToMarkdown(imagePaths, deckInfo.title, {
@@ -324,6 +307,8 @@ export async function runDownload(url: string, options: DownloadOptions = {}): P
 
     let outputTitle = deckInfo.title;
     let markdownPath: string | null = null;
+    let titleAiCostUsd: number | null | undefined;
+    let cleanupAiCostUsd: number | null | undefined;
 
     const contextLimit = config.markdownContextLimitTokens ?? 32_000;
 
@@ -345,12 +330,14 @@ export async function runDownload(url: string, options: DownloadOptions = {}): P
         titleInput = await ocrSingleImage(imagePaths[0]);
         titleMaxTokens = 500;
       }
-      outputTitle = await deriveFriendlyDeckName(
+      const titleResult = await deriveFriendlyDeckName(
         titleInput,
         deckInfo.title,
         config.markdownCleanupModel ?? "gpt-4o-mini",
         { maxInputTokens: titleMaxTokens, debug: options.debug }
       );
+      outputTitle = titleResult.name;
+      titleAiCostUsd = titleResult.estimatedCostUsd;
       if (!json) {
         spinner.succeed(`${CLI_ICONS_COLOR.deck} Deck: "${outputTitle}"`);
         console.log(`Using title: "${outputTitle}"`);
@@ -365,11 +352,11 @@ export async function runDownload(url: string, options: DownloadOptions = {}): P
       }
 
       finalMd = rawMd;
-      const imagesCleanedPath = join(outputDir, outputTitle + ".cleaned.md");
+      const imagesCleanedPath = join(deckDir, outputTitle + ".md");
       const streamBufferImages = createStreamWriteBuffer(imagesCleanedPath, { json });
       if (cleanup && rawMd) {
         spinner.start(`${CLI_ICONS_COLOR.cleanup} Cleaning text...`);
-        finalMd = await cleanupMarkdownWithExtract(
+        const cleanupResult = await cleanupMarkdownWithExtract(
           rawMd,
           config.markdownCleanupModel ?? "gpt-4o-mini",
           {
@@ -386,12 +373,14 @@ export async function runDownload(url: string, options: DownloadOptions = {}): P
             debug: options.debug,
           }
         );
+        finalMd = cleanupResult.markdown;
+        cleanupAiCostUsd = cleanupResult.estimatedCostUsd;
         await streamBufferImages.flushAndClose();
         if (!json) spinner.succeed(`${CLI_ICONS_COLOR.cleanedMarkdown} Markdown cleaned`);
       }
 
       if (finalMd !== null) {
-        const rawPath = join(outputDir, outputTitle + ".raw.md");
+        const rawPath = join(deckDir, outputTitle + ".ocr.md");
         const cleanedPath = imagesCleanedPath;
         if (outputTitle !== deckInfo.title) {
           writeFileSync(rawPath, rawMd!, "utf-8");
@@ -410,52 +399,87 @@ export async function runDownload(url: string, options: DownloadOptions = {}): P
     }
 
     const elapsed = Date.now() - startTime;
-    let zipPath: string | null = null;
-    if (!json) {
-      spinner.start(`${CLI_ICONS_COLOR.archive} Creating archive...`);
-      try {
-        const rawPath = markdownPath && !markdownPath.includes(".cleaned.") ? markdownPath : null;
-        const cleanedPath = markdownPath && markdownPath.includes(".cleaned.") ? markdownPath : null;
-        zipPath = await createDeckArchive(
-          outputTitle,
-          {
-            rawMarkdown: rawPath ?? undefined,
-            cleanedMarkdown: cleanedPath ?? undefined,
-            images: imagePaths,
-          },
-          outputDir,
-          json
-        );
-        if (zipPath) spinner.succeed(`${CLI_ICONS_COLOR.success} Archive created`);
+    const summaryJsonPath = join(deckDir, "summary.json");
+    const zipPath = join(deckDir, `${outputTitle}.zip`);
+
+    const summaryPayload: DownloadSummaryResult = {
+      ...dlResult,
+      slideCount: deckInfo.slideCount,
+      outputPath: deckDir,
+      markdownPath,
+      zipPath,
+      imagePaths,
+      ...(titleAiCostUsd !== undefined && { titleAiCostUsd }),
+      ...(cleanupAiCostUsd !== undefined && { cleanupAiCostUsd }),
+      ...(rawMd != null && {
+        rawMarkdownChars: rawMd.length,
+        rawMarkdownBytes: Buffer.byteLength(rawMd, "utf-8"),
+      }),
+      ...(cleanup &&
+        finalMd != null &&
+        finalMd !== rawMd && {
+          cleanedMarkdownChars: finalMd.length,
+          cleanedMarkdownBytes: Buffer.byteLength(finalMd, "utf-8"),
+        }),
+    };
+
+    const extras: DownloadSummaryPayloadExtras = {
+      slug: deckInfo.slug,
+      deckDir,
+      parentOutput,
+      format: "png",
+      bundleImages,
+      summaryJsonPath,
+    };
+
+    writeFileSync(
+      summaryJsonPath,
+      JSON.stringify(
+        buildDownloadSummaryPayload(summaryPayload, outputTitle, deckDir, elapsed, extras),
+        null,
+        2
+      ),
+      "utf-8"
+    );
+
+    let zipCreatedPath: string | null = null;
+    if (!json) spinner.start(`${CLI_ICONS_COLOR.archive} Creating archive...`);
+    try {
+      const rawPath = markdownPath && isOcrMarkdownFile(markdownPath) ? markdownPath : null;
+      const cleanedPath = markdownPath && isMainMarkdownFile(markdownPath) ? markdownPath : null;
+      const zipImagePaths = bundleImages ? imagePaths : [];
+      zipCreatedPath = await createDeckArchive(
+        outputTitle,
+        {
+          rawMarkdown: rawPath ?? undefined,
+          cleanedMarkdown: cleanedPath ?? undefined,
+          summaryJson: summaryJsonPath,
+          imagePaths: zipImagePaths,
+          imagePathsInSubfolder: bundleImages && zipImagePaths.length > 0,
+        },
+        deckDir
+      );
+      if (!json) {
+        if (zipCreatedPath) spinner.succeed(`${CLI_ICONS_COLOR.success} Archive created`);
         else spinner.succeed(`${CLI_ICONS_COLOR.info} Archive skipped (no files)`);
-      } catch (err) {
+      }
+    } catch (err) {
+      if (!json) {
         spinner.warn(
           `${CLI_ICONS_COLOR.warning} Archive creation failed: ${err instanceof Error ? err.message : String(err)}`
         );
       }
     }
-    const summaryPayload = {
-      ...dlResult,
-      slideCount: deckInfo.slideCount,
-      outputPath: outputDir,
-      markdownPath,
-      zipPath,
-      imagePaths,
-      ...(rawMd != null && {
-        rawMarkdownChars: rawMd.length,
-        rawMarkdownBytes: Buffer.byteLength(rawMd, "utf-8"),
-      }),
-      ...(cleanup && finalMd != null && finalMd !== rawMd && {
-        cleanedMarkdownChars: finalMd.length,
-        cleanedMarkdownBytes: Buffer.byteLength(finalMd, "utf-8"),
-      }),
-    };
+
+    summaryPayload.zipPath = zipCreatedPath;
+
     const summary = formatDownloadSummary(
       summaryPayload,
       outputTitle,
-      outputDir,
+      deckDir,
       elapsed,
-      json ? "json" : "plain"
+      json ? "json" : "plain",
+      extras
     );
     console.log(summary);
     if (dlResult.failures > 0) process.exit(1);
@@ -506,7 +530,18 @@ export async function runDownload(url: string, options: DownloadOptions = {}): P
     .sort();
   const imagePaths = slideFiles.map((f) => join(cacheDir, f));
 
-  const slugPdfPath = resolvePdfPath(options.output, deckInfo.title, cwd);
+  const imagesDir = join(deckDir, "images");
+  let bundledImagePaths: string[] = imagePaths;
+  if (bundleImages && imagePaths.length > 0) {
+    copySlidesToBundleImages(cacheDir, imagesDir);
+    bundledImagePaths = readdirSync(imagesDir)
+      .filter((f) => f.startsWith("slide_") && f.endsWith(".png"))
+      .sort()
+      .map((f) => join(imagesDir, f));
+  }
+  const summaryImagePaths = bundleImages ? bundledImagePaths : imagePaths;
+
+  const slugPdfPath = join(deckDir, `${deckInfo.title}.pdf`);
   let pdfSize = 0;
   if (imagePaths.length > 0) {
     spinner.start(`${CLI_ICONS_COLOR.pdf} Assembling PDF...`);
@@ -515,7 +550,7 @@ export async function runDownload(url: string, options: DownloadOptions = {}): P
   }
 
   let rawMd: string | null = null;
-  const slugRawPath = resolveMarkdownPathForPdf(slugPdfPath, "raw");
+  const slugRawPath = resolveMarkdownPathForPdf(slugPdfPath, "ocr");
   if (markdown && imagePaths.length > 0) {
     spinner.start(`${CLI_ICONS_COLOR.ocr} Extracting text (OCR)...`);
     rawMd = await ocrImagesToMarkdown(imagePaths, deckInfo.title, {
@@ -530,6 +565,8 @@ export async function runDownload(url: string, options: DownloadOptions = {}): P
   let finalPdfPath = slugPdfPath;
   let markdownPath: string | null = null;
   let finalMd: string | null = rawMd;
+  let titleAiCostUsd: number | null | undefined;
+  let cleanupAiCostUsd: number | null | undefined;
 
   const contextLimit = config.markdownContextLimitTokens ?? 32_000;
 
@@ -551,12 +588,14 @@ export async function runDownload(url: string, options: DownloadOptions = {}): P
       titleInput = await ocrSingleImage(imagePaths[0]);
       titleMaxTokens = 500;
     }
-    outputTitle = await deriveFriendlyDeckName(
+    const titleResult = await deriveFriendlyDeckName(
       titleInput || "",
       deckInfo.title,
       config.markdownCleanupModel ?? "gpt-4o-mini",
       { maxInputTokens: titleMaxTokens, debug: options.debug }
     );
+    outputTitle = titleResult.name;
+    titleAiCostUsd = titleResult.estimatedCostUsd;
     if (!json) {
       spinner.succeed(`${CLI_ICONS_COLOR.deck} Deck: "${outputTitle}"`);
       console.log(`Using title: "${outputTitle}"`);
@@ -573,13 +612,13 @@ export async function runDownload(url: string, options: DownloadOptions = {}): P
     finalMd = rawMd;
     const cleanedPathForStream =
       outputTitle !== deckInfo.title
-        ? resolveMarkdownPathForPdf(resolvePdfPath(options.output, outputTitle, cwd), "cleaned")
-        : resolveMarkdownPathForPdf(slugPdfPath, "cleaned");
+        ? resolveMarkdownPathForPdf(join(deckDir, `${outputTitle}.pdf`), "main")
+        : resolveMarkdownPathForPdf(slugPdfPath, "main");
     mkdirSync(dirname(cleanedPathForStream), { recursive: true });
     const streamBufferPdf = createStreamWriteBuffer(cleanedPathForStream, { json });
     if (cleanup && rawMd) {
       spinner.start(`${CLI_ICONS_COLOR.cleanup} Cleaning text...`);
-      finalMd = await cleanupMarkdownWithExtract(
+      const cleanupResult = await cleanupMarkdownWithExtract(
         rawMd,
         config.markdownCleanupModel ?? "gpt-4o-mini",
         {
@@ -596,16 +635,18 @@ export async function runDownload(url: string, options: DownloadOptions = {}): P
           debug: options.debug,
         }
       );
+      finalMd = cleanupResult.markdown;
+      cleanupAiCostUsd = cleanupResult.estimatedCostUsd;
       await streamBufferPdf.flushAndClose();
       if (!json) spinner.succeed(`${CLI_ICONS_COLOR.cleanedMarkdown} Markdown cleaned`);
     }
 
     if (outputTitle !== deckInfo.title) {
-      finalPdfPath = resolvePdfPath(options.output, outputTitle, cwd);
+      finalPdfPath = join(deckDir, `${outputTitle}.pdf`);
       renameSync(slugPdfPath, finalPdfPath);
       if (finalMd !== null) {
-        const finalRawPath = resolveMarkdownPathForPdf(finalPdfPath, "raw");
-        const finalCleanedPath = resolveMarkdownPathForPdf(finalPdfPath, "cleaned");
+        const finalRawPath = resolveMarkdownPathForPdf(finalPdfPath, "ocr");
+        const finalCleanedPath = resolveMarkdownPathForPdf(finalPdfPath, "main");
         writeFileSync(finalRawPath, rawMd!, "utf-8");
         unlinkSync(slugRawPath);
         if (cleanup && finalMd !== rawMd) {
@@ -619,7 +660,7 @@ export async function runDownload(url: string, options: DownloadOptions = {}): P
       if (finalMd !== null) {
         markdownPath = slugRawPath;
         if (cleanup && finalMd !== rawMd) {
-          const slugCleanedPath = resolveMarkdownPathForPdf(slugPdfPath, "cleaned");
+          const slugCleanedPath = resolveMarkdownPathForPdf(slugPdfPath, "main");
           writeFileSync(slugCleanedPath, finalMd, "utf-8");
           markdownPath = slugCleanedPath;
         }
@@ -631,34 +672,10 @@ export async function runDownload(url: string, options: DownloadOptions = {}): P
   }
 
   const elapsed = Date.now() - startTime;
-  let zipPath: string | null = null;
-  const outputDirForZip = dirname(finalPdfPath);
-  if (!json) {
-    spinner.start(`${CLI_ICONS_COLOR.archive} Creating archive...`);
-    try {
-      const rawPath = markdownPath && !markdownPath.includes(".cleaned.") ? markdownPath : null;
-      const cleanedPath = markdownPath && markdownPath.includes(".cleaned.") ? markdownPath : null;
-      zipPath = await createDeckArchive(
-        outputTitle,
-        {
-          pdf: finalPdfPath,
-          rawMarkdown: rawPath ?? undefined,
-          cleanedMarkdown: cleanedPath ?? undefined,
-          images: imagePaths,
-        },
-        outputDirForZip,
-        json
-      );
-      if (zipPath) spinner.succeed(`${CLI_ICONS_COLOR.success} Archive created`);
-      else spinner.succeed(`${CLI_ICONS_COLOR.info} Archive skipped (no files)`);
-    } catch (err) {
-      spinner.warn(
-        `${CLI_ICONS_COLOR.warning} Archive creation failed: ${err instanceof Error ? err.message : String(err)}`
-      );
-    }
-  }
-  const result = {
-    deckTitle: outputTitle,
+  const summaryJsonPath = join(deckDir, "summary.json");
+  const predictedZipPath = join(deckDir, `${outputTitle}.zip`);
+
+  const result: DownloadSummaryResult = {
     slideCount: deckInfo.slideCount,
     successes: dlResult.successes,
     failures: dlResult.failures,
@@ -666,23 +683,90 @@ export async function runDownload(url: string, options: DownloadOptions = {}): P
     failedSlides: dlResult.failedSlides,
     outputPath: finalPdfPath,
     markdownPath,
-    zipPath,
-    imagePaths,
+    zipPath: predictedZipPath as string | null,
+    imagePaths: summaryImagePaths,
+    ...(titleAiCostUsd !== undefined && { titleAiCostUsd }),
+    ...(cleanupAiCostUsd !== undefined && { cleanupAiCostUsd }),
     ...(rawMd != null && {
       rawMarkdownChars: rawMd.length,
       rawMarkdownBytes: Buffer.byteLength(rawMd, "utf-8"),
     }),
-    ...(cleanup && finalMd != null && finalMd !== rawMd && {
-      cleanedMarkdownChars: finalMd.length,
-      cleanedMarkdownBytes: Buffer.byteLength(finalMd, "utf-8"),
-    }),
+    ...(cleanup &&
+      finalMd != null &&
+      finalMd !== rawMd && {
+        cleanedMarkdownChars: finalMd.length,
+        cleanedMarkdownBytes: Buffer.byteLength(finalMd, "utf-8"),
+      }),
   };
+
+  const extras: DownloadSummaryPayloadExtras = {
+    slug: deckInfo.slug,
+    deckDir,
+    parentOutput,
+    format: "pdf",
+    bundleImages,
+    summaryJsonPath,
+  };
+
+  writeFileSync(
+    summaryJsonPath,
+    JSON.stringify(
+      buildDownloadSummaryPayload(result, outputTitle, finalPdfPath, elapsed, extras),
+      null,
+      2
+    ),
+    "utf-8"
+  );
+
+  let zipCreatedPath: string | null = null;
+  if (!json) spinner.start(`${CLI_ICONS_COLOR.archive} Creating archive...`);
+  try {
+    const rawPath = markdownPath && isOcrMarkdownFile(markdownPath) ? markdownPath : null;
+    const cleanedPath = markdownPath && isMainMarkdownFile(markdownPath) ? markdownPath : null;
+    const zipImagePaths = bundleImages ? bundledImagePaths : [];
+    zipCreatedPath = await createDeckArchive(
+      outputTitle,
+      {
+        pdf: finalPdfPath,
+        rawMarkdown: rawPath ?? undefined,
+        cleanedMarkdown: cleanedPath ?? undefined,
+        summaryJson: summaryJsonPath,
+        imagePaths: zipImagePaths,
+        imagePathsInSubfolder: bundleImages && zipImagePaths.length > 0,
+      },
+      deckDir
+    );
+    if (!json) {
+      if (zipCreatedPath) spinner.succeed(`${CLI_ICONS_COLOR.success} Archive created`);
+      else spinner.succeed(`${CLI_ICONS_COLOR.info} Archive skipped (no files)`);
+    }
+  } catch (err) {
+    if (!json) {
+      spinner.warn(
+        `${CLI_ICONS_COLOR.warning} Archive creation failed: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+  }
+
+  result.zipPath = zipCreatedPath;
+
+  writeFileSync(
+    summaryJsonPath,
+    JSON.stringify(
+      buildDownloadSummaryPayload(result, outputTitle, finalPdfPath, elapsed, extras),
+      null,
+      2
+    ),
+    "utf-8"
+  );
+
   const summary = formatDownloadSummary(
     result,
     outputTitle,
     finalPdfPath,
     elapsed,
-    json ? "json" : "plain"
+    json ? "json" : "plain",
+    extras
   );
   console.log(summary);
   if (dlResult.failures > 0) process.exit(1);
@@ -691,17 +775,34 @@ export async function runDownload(url: string, options: DownloadOptions = {}): P
 export function registerDownloadCommand(program: Command): void {
   program
     .command("download [url]")
-    .description("Download a DocSend deck as PDF (default) or PNG images")
-    .option("-o, --output <path>", "Output path: .pdf file, or directory for PDF/images")
-    .option("--images", "Save individual PNG images instead of a single PDF")
-    .option("-m, --markdown", "Create OCR markdown (default: on)")
-    .option("--no-markdown", "Skip OCR markdown; PDF/images only")
-    .option("--cleanup", "Clean markdown with OpenAI or local model (default: on)")
-    .option("--no-cleanup", "Skip cleanup; keep raw OCR text only")
-    .option("--force", "Re-download slide images even if already present (cache or output dir)")
-    .option("--no-headless", "Show the browser window during extraction")
-    .option("--json", "Output result as JSON")
-    .option("--debug", "Log debug info to stderr")
+    .description(
+      "Download a deck into <parent>/<slug>/ (PDF default, or PNG slides with --format png). Same options as `deckli <url>`."
+    )
+    .option(
+      "-o, --output <path>",
+      "Parent directory for deck output (each deck goes to <parent>/<slug>/). A path ending in .pdf sets the parent directory only; the filename is ignored"
+    )
+    .addOption(
+      new Option("--format <type>", "pdf (default): cache slides, assemble one PDF; png: slide PNGs only, no PDF")
+        .choices(["pdf", "png"])
+        .default("pdf")
+    )
+    .option(
+      "--no-bundle-images",
+      "Do not copy slides into <slug>/images/ (pdf mode) or omit slides from the zip (png mode)"
+    )
+    .option("--images", "Deprecated: same as --format png (prints a warning)")
+    .option("-m, --markdown", "Write OCR markdown (default: on)")
+    .option("--no-markdown", "Skip OCR markdown (PDF or PNG files only)")
+    .option("--cleanup", "Run model cleanup on OCR text (default: on)")
+    .option("--no-cleanup", "Skip cleanup; keep raw .ocr.md only")
+    .option(
+      "--force",
+      "Re-download slides even if already present (~/.deckli/cache for pdf, or <slug>/images for png)"
+    )
+    .option("--no-headless", "Run the browser visibly (login, debugging)")
+    .option("--json", "Print summary JSON to stdout; summary.json and zip are still written under <slug>/")
+    .option("--debug", "Verbose stderr: URLs, extraction, model/title steps")
     .option(
       "--email <address>",
       "Email for require-email gates: add ?email= to the URL and auto-click Continue when the modal appears"
@@ -714,6 +815,10 @@ export function registerDownloadCommand(program: Command): void {
           json ? JSON.stringify({ success: false, error: msg }, null, 2) : formatError(msg, "plain")
         );
         process.exit(1);
+      }
+      if (options.images) {
+        console.warn("[deckli] --images is deprecated; use --format png");
+        options = { ...options, format: "png" };
       }
       try {
         await runDownload(url, options);

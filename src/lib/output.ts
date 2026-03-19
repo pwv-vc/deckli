@@ -70,6 +70,12 @@ export function formatError(message: string, format: "plain" | "json"): string {
   return pc.red(`Error: ${message}`);
 }
 
+/** Plain-text display for estimated OpenAI USD; em dash when local, skipped, or unknown pricing. */
+export function formatEstimatedUsd(usd: number | null): string {
+  if (usd == null) return "—";
+  return `~$${usd.toFixed(6)}`;
+}
+
 export function formatSize(numBytes: number): string {
   let value = numBytes;
   const units = ["B", "KB", "MB", "GB"];
@@ -95,6 +101,61 @@ export interface DownloadSummaryResult extends DownloadResult {
   cleanedMarkdownChars?: number;
   /** Cleaned markdown file size (bytes, UTF-8) when cleanup was used. */
   cleanedMarkdownBytes?: number;
+  /** Estimated OpenAI cost for deck title detection; null = local / no billable call. Set when slides were processed. */
+  titleAiCostUsd?: number | null;
+  /** Estimated OpenAI cost for markdown cleanup; null = local / no billable call. Set when cleanup ran. */
+  cleanupAiCostUsd?: number | null;
+}
+
+/** Optional fields written to `summary.json` alongside stdout `--json`. */
+export interface DownloadSummaryPayloadExtras {
+  slug?: string | null;
+  deckDir?: string;
+  parentOutput?: string;
+  format?: "pdf" | "png";
+  bundleImages?: boolean;
+  summaryJsonPath?: string;
+}
+
+export function buildDownloadSummaryPayload(
+  result: DownloadSummaryResult | DeckDownloadResult,
+  deckTitle: string,
+  outputPath: string,
+  elapsedMs: number,
+  extras?: DownloadSummaryPayloadExtras
+): Record<string, unknown> {
+  const summaryOutputPath = "outputPath" in result ? result.outputPath ?? outputPath : outputPath;
+  const markdownPath = "markdownPath" in result ? result.markdownPath : undefined;
+  const summaryResult = result as DownloadSummaryResult;
+
+  const payload: Record<string, unknown> = {
+    success: result.failures === 0,
+    deckTitle,
+    slideCount: result.slideCount,
+    successes: result.successes,
+    failures: result.failures,
+    totalBytes: result.totalBytes,
+    outputPath: summaryOutputPath,
+    durationMs: Math.round(elapsedMs),
+  };
+  if (markdownPath != null) payload.markdownPath = markdownPath;
+  if (summaryResult.zipPath != null) payload.zipPath = summaryResult.zipPath;
+  if (summaryResult.imagePaths && summaryResult.imagePaths.length > 0) payload.imagePaths = summaryResult.imagePaths;
+  if (summaryResult.rawMarkdownChars != null) payload.rawMarkdownChars = summaryResult.rawMarkdownChars;
+  if (summaryResult.rawMarkdownBytes != null) payload.rawMarkdownBytes = summaryResult.rawMarkdownBytes;
+  if (summaryResult.cleanedMarkdownChars != null) payload.cleanedMarkdownChars = summaryResult.cleanedMarkdownChars;
+  if (summaryResult.cleanedMarkdownBytes != null) payload.cleanedMarkdownBytes = summaryResult.cleanedMarkdownBytes;
+  if (summaryResult.titleAiCostUsd !== undefined) payload.titleAiCostUsd = summaryResult.titleAiCostUsd;
+  if (summaryResult.cleanupAiCostUsd !== undefined) payload.cleanupAiCostUsd = summaryResult.cleanupAiCostUsd;
+
+  if (extras?.slug !== undefined) payload.slug = extras.slug;
+  if (extras?.deckDir !== undefined) payload.deckDir = extras.deckDir;
+  if (extras?.parentOutput !== undefined) payload.parentOutput = extras.parentOutput;
+  if (extras?.format !== undefined) payload.format = extras.format;
+  if (extras?.bundleImages !== undefined) payload.bundleImages = extras.bundleImages;
+  if (extras?.summaryJsonPath !== undefined) payload.summaryJsonPath = extras.summaryJsonPath;
+
+  return payload;
 }
 
 export function formatDownloadSummary(
@@ -102,31 +163,15 @@ export function formatDownloadSummary(
   deckTitle: string,
   outputPath: string,
   elapsedMs: number,
-  format: "plain" | "json"
+  format: "plain" | "json",
+  extras?: DownloadSummaryPayloadExtras
 ): string {
   const summaryOutputPath = "outputPath" in result ? result.outputPath ?? outputPath : outputPath;
   const markdownPath = "markdownPath" in result ? result.markdownPath : undefined;
 
   const summaryResult = result as DownloadSummaryResult;
   if (format === "json") {
-    const payload: Record<string, unknown> = {
-      success: result.failures === 0,
-      deckTitle,
-      slideCount: result.slideCount,
-      successes: result.successes,
-      failures: result.failures,
-      totalBytes: result.totalBytes,
-      outputPath: summaryOutputPath,
-      durationMs: Math.round(elapsedMs),
-    };
-    if (markdownPath != null) payload.markdownPath = markdownPath;
-    if (summaryResult.zipPath != null) payload.zipPath = summaryResult.zipPath;
-    if (summaryResult.imagePaths && summaryResult.imagePaths.length > 0) payload.imagePaths = summaryResult.imagePaths;
-    if (summaryResult.rawMarkdownChars != null) payload.rawMarkdownChars = summaryResult.rawMarkdownChars;
-    if (summaryResult.rawMarkdownBytes != null) payload.rawMarkdownBytes = summaryResult.rawMarkdownBytes;
-    if (summaryResult.cleanedMarkdownChars != null) payload.cleanedMarkdownChars = summaryResult.cleanedMarkdownChars;
-    if (summaryResult.cleanedMarkdownBytes != null) payload.cleanedMarkdownBytes = summaryResult.cleanedMarkdownBytes;
-    return JSON.stringify(payload, null, 2);
+    return JSON.stringify(buildDownloadSummaryPayload(result, deckTitle, outputPath, elapsedMs, extras), null, 2);
   }
 
   const lines: string[] = [
@@ -169,8 +214,18 @@ export function formatDownloadSummary(
       `${CLI_ICONS_COLOR.cleanedMarkdown} ${pc.bold("Cleaned markdown:")} ${summaryResult.cleanedMarkdownChars.toLocaleString()} chars${sizeStr ? ` (${sizeStr})` : ""}`
     );
   }
+  if (summaryResult.titleAiCostUsd !== undefined) {
+    lines.push(
+      `${CLI_ICONS_COLOR.aiTitleCost} ${pc.bold("AI title (est.):")} ${formatEstimatedUsd(summaryResult.titleAiCostUsd)}`
+    );
+  }
+  if (summaryResult.cleanupAiCostUsd !== undefined) {
+    lines.push(
+      `${CLI_ICONS_COLOR.aiCleanupCost} ${pc.bold("AI cleanup (est.):")} ${formatEstimatedUsd(summaryResult.cleanupAiCostUsd)}`
+    );
+  }
 
-  const title =
+  const doneLine =
     result.failures === 0
       ? `${CLI_ICONS_COLOR.done} ${pc.bold(pc.green(`Done in ${(elapsedMs / 1000).toFixed(1)}s`))}`
       : `${CLI_ICONS_COLOR.warning} ${pc.bold(pc.yellow(`Done in ${(elapsedMs / 1000).toFixed(1)}s`))}`;
@@ -178,7 +233,7 @@ export function formatDownloadSummary(
   const indent = "  ";
   const cols = process.stdout.columns || 80;
   const innerMax = Math.max(
-    terminalDisplayWidth(title),
+    terminalDisplayWidth(doneLine),
     ...lines.map((l) => terminalDisplayWidth(l)),
     32
   );
@@ -186,5 +241,5 @@ export function formatDownloadSummary(
   const ruleLen = Math.min(cols, Math.max(36, innerMax + 6));
   const rule = pc.dim(CLI_ICONS.line.repeat(ruleLen));
 
-  return ["", rule, `${indent}${title}`, "", ...lines.map((line) => `${indent}${line}`), "", rule].join("\n");
+  return ["", rule, `${indent}${doneLine}`, "", ...lines.map((line) => `${indent}${line}`), "", rule].join("\n");
 }

@@ -9,7 +9,9 @@ import {
   hasBrowserProfile,
   clearBrowserProfile,
   listProfileKeys,
-  resolvePdfPath,
+  resolveParentOutput,
+  resolveDeckDir,
+  sanitizeDeckDirName,
 } from "./storage.js";
 
 describe("storage (with DECKLI_HOME)", () => {
@@ -92,20 +94,36 @@ describe("storage (with DECKLI_HOME)", () => {
   });
 });
 
-describe("resolvePdfPath", () => {
+describe("sanitizeDeckDirName", () => {
+  it("replaces unsafe characters with underscores", () => {
+    expect(sanitizeDeckDirName("docsend-abc123")).toBe("docsend-abc123");
+    expect(sanitizeDeckDirName("a/b:c")).toBe("a_b_c");
+  });
+});
+
+describe("resolveParentOutput", () => {
   const cwd = "/tmp/cwd";
 
-  it("returns cwd/deckTitle.pdf when output is undefined", () => {
-    expect(resolvePdfPath(undefined, "My Deck", cwd)).toBe(join(cwd, "My Deck.pdf"));
+  it("returns cwd when output is undefined or empty", () => {
+    expect(resolveParentOutput(undefined, cwd)).toBe(cwd);
+    expect(resolveParentOutput("", cwd)).toBe(cwd);
   });
 
-  it("returns output as path when output ends with .pdf", () => {
-    expect(resolvePdfPath("out.pdf", "Deck", cwd)).toBe(join(cwd, "out.pdf"));
-    expect(resolvePdfPath("/absolute/out.pdf", "Deck", cwd)).toBe("/absolute/out.pdf");
+  it("returns dirname when output ends with .pdf", () => {
+    expect(resolveParentOutput("out.pdf", cwd)).toBe(cwd);
+    expect(resolveParentOutput("sub/out.pdf", cwd)).toBe(join(cwd, "sub"));
+    expect(resolveParentOutput("/abs/a/out.pdf", cwd)).toBe("/abs/a");
   });
 
-  it("returns output/deckTitle.pdf when output is a directory", () => {
-    expect(resolvePdfPath("/absolute/dir", "Deck", cwd)).toBe("/absolute/dir/Deck.pdf");
-    expect(resolvePdfPath("relative/dir", "Deck", cwd)).toBe(join(cwd, "relative/dir/Deck.pdf"));
+  it("returns directory path when output is not a pdf", () => {
+    expect(resolveParentOutput("/absolute/dir", cwd)).toBe("/absolute/dir");
+    expect(resolveParentOutput("relative/dir", cwd)).toBe(join(cwd, "relative/dir"));
+  });
+});
+
+describe("resolveDeckDir", () => {
+  it("joins parent with sanitized slug", () => {
+    expect(resolveDeckDir("/out", "docsend-abc")).toBe(join("/out", "docsend-abc"));
+    expect(resolveDeckDir("/out", "weird/name")).toBe(join("/out", "weird_name"));
   });
 });

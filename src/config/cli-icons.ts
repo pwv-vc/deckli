@@ -39,6 +39,10 @@ const raw = {
   info: figures.info,
   /** Horizontal rule character (summary separators). */
   line: figures.line,
+  /** Estimated API cost — deck title / name detection (OpenAI). */
+  aiTitleCost: figures.lozengeOutline,
+  /** Estimated API cost — markdown cleanup (OpenAI). */
+  aiCleanupCost: figures.circleDotted,
 } as const;
 
 export type CliIconKey = keyof typeof raw;
@@ -72,4 +76,6 @@ export const CLI_ICONS_COLOR: { [K in CliIconKey]: string } = {
   success: pc.green(raw.success),
   info: pc.blue(raw.info),
   line: pc.dim(raw.line),
+  aiTitleCost: pc.yellow(raw.aiTitleCost),
+  aiCleanupCost: pc.yellow(raw.aiCleanupCost),
 };

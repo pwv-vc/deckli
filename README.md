@@ -1,8 +1,8 @@
 # deckli
 
-Download DocSend decks as PDF — one command, full quality.
+Download DocSend decks into **`<parent>/<slug>/`** — PDF or PNG slides, OCR markdown, **`summary.json`**, and a zip.
 
-A TypeScript CLI that saves any public (or logged-in) DocSend deck as a single PDF or as individual PNG images. Code based on [captivus/docsend-dl](https://github.com/captivus/docsend-dl); thanks to that project.
+A TypeScript CLI for any public (or logged-in) DocSend deck. Default output is an assembled **PDF**; use **`--format png`** for slide PNGs only. Based on [captivus/docsend-dl](https://github.com/captivus/docsend-dl); thanks to that project.
 
 ## Quick start
 
@@ -11,12 +11,15 @@ pnpm install
 pnpm exec playwright install chromium
 pnpm build
 ./dist/cli.js https://docsend.com/view/XXXXXX
+# optional: parent directory for all decks
+./dist/cli.js -o ./exports https://docsend.com/view/XXXXXX
 ```
 
 Or with pnpm run:
 
 ```bash
 pnpm dev https://docsend.com/view/XXXXXX
+pnpm dev -- -o ./exports https://docsend.com/view/XXXXXX
 ```
 
 ## Installation
@@ -39,6 +42,15 @@ deckli https://docsend.com/view/XXXXXX
 
 ## Usage
 
+### Help
+
+```bash
+deckli -h                    # options for the default download command
+deckli download -h           # same options, explicit subcommand
+deckli login -h
+deckli logout -h
+```
+
 ### Download as PDF (default)
 
 ```bash
@@ -46,7 +58,9 @@ deckli https://docsend.com/view/XXXXXX
 deckli https://dbx.docsend.com/view/XXXXXX
 ```
 
-Output: `{deck-title}.pdf` in the current directory.
+Output: everything for a deck goes under **`<parent>/<slug>/`**, where `parent` is the current directory by default (or the directory you pass with **`-o`**) and `slug` is the URL-derived DocSend slug (sanitized for the filesystem). Inside that folder you get **`{name}.pdf`**, OCR/cleaned **markdown**, a **`summary.json`** (paths, sizes, estimated AI costs, etc.), slide PNGs under **`images/`** (by default), and a **`{name}.zip`** containing those artifacts (except when there is nothing to add).
+
+**Breaking change (paths):** `-o` is now a **parent directory** (or a path ending in `.pdf`, in which case the parent is `dirname` of that path — the filename is ignored). Files are **not** written as `parent/DeckTitle.pdf` at the top level; they are written as **`parent/<slug>/{name}.pdf`** (and the same folder for markdown, zip, and `summary.json`).
 
 ### Markdown (OCR + cleanup) — on by default
 
@@ -56,12 +70,12 @@ By default, the CLI runs **OCR markdown** and **model cleanup** alongside the PD
 deckli https://docsend.com/view/XXXXXX
 ```
 
-This runs OCR (tesseract.js) on each slide and writes **`{name}.raw.md`**, then cleans it to **`{name}.cleaned.md`** using the model in `~/.deckli/config.json` (`markdownCleanupModel`). **Default model is `gpt-4o-mini` via the OpenAI API** — set **`OPENAI_API_KEY`** (see [OpenAI API key](#openai-api-key-environment-variable)). For fully local cleanup without API keys, set `markdownCleanupModel` to `"350m"` or `"1.2b"` (Liquid Nano Extract ONNX; first run downloads the model).
+This runs OCR (tesseract.js) on each slide and writes **`{name}.ocr.md`**, then cleans it to **`{name}.md`** using the model in `~/.deckli/config.json` (`markdownCleanupModel`). **Default model is `gpt-4o-mini` via the OpenAI API** — set **`OPENAI_API_KEY`** (see [OpenAI API key](#openai-api-key-environment-variable)). For fully local cleanup without API keys, set `markdownCleanupModel` to `"350m"` or `"1.2b"` (Liquid Nano Extract ONNX; first run downloads the model).
 
 **Opt out:**
 
-- **`--no-markdown`** — PDF (or `--images`) only; no `.md` files.
-- **`--no-cleanup`** — Keep **`{name}.raw.md`** only; skip cleaned markdown (faster, no API / local model for cleanup).
+- **`--no-markdown`** — PDF (or `--format png`) only; skip OCR and cleaned markdown output.
+- **`--no-cleanup`** — Keep **`{name}.ocr.md`** only; skip cleaned markdown (faster, no API / local model for cleanup).
 
 The first `#` heading is updated from the DocSend slug to a **readable deck title** when a friendly filename is detected (e.g. `# RenewablesBridge` instead of `# docsend-…`).
 
@@ -71,22 +85,27 @@ PDF and markdown filenames are not always the DocSend URL slug. When slides are 
 
 1. OCR is run on the first slide image.
 2. The same model as `--cleanup` (OpenAI or local Extract) is asked to extract company and/or product name and return a short filename ending with `-deck` (e.g. `AcmeCorp-ProductName-deck`).
-3. The result is sanitized for filenames (letters, numbers, hyphens only) and used as the base name for the PDF and markdown files (`.raw.md`, `.cleaned.md`).
+3. The result is sanitized for filenames (letters, numbers, hyphens only) and used as the base name for the PDF and markdown files (`.ocr.md` for OCR output, `.md` for cleaned text).
 
 If detection fails (no slides, empty OCR, or model error), the DocSend deck slug is used as before.
 
 ### Options
 
-- **`-o, --output <path>`** — Output path: a `.pdf` filename, or a directory (then the file is `{deck-title}.pdf` inside it). For `--images`, this is the output directory.
-- **`--images`** — Save individual PNG images instead of a single PDF.
-- **`-m, --markdown`** — Create OCR markdown (default: **on**). Use with **`--no-markdown`** to disable.
-- **`--no-markdown`** — Skip OCR markdown; PDF/images only.
-- **`--cleanup`** — Clean raw markdown with OpenAI or a local Extract model (default: **on**). Writes `{name}.cleaned.md`.
-- **`--no-cleanup`** — Skip cleanup; keep raw OCR only.
-- **`--force`** — Re-download slide images even if they are already present (output dir for `--images`, or cache for PDF). Without `--force`, existing images are reused and the tool only re-runs PDF assembly and/or markdown/cleanup/rename as requested.
-- **`--no-headless`** — Show the browser window during extraction (useful for debugging or one-off login).
-- **`--json`** — Output machine-readable JSON (no banner, no progress text; result only).
-- **`--email <address>`** — For decks that show a “require email” gate: adds `?email=` to the link (DocSend may prefill the field) and, if slides do not load immediately, fills the email input and clicks **Continue**. Decks that require **inbox verification** (DocSend “email authentication”) still need a human or a saved session—use `deckli login` or `--no-headless` if automation stops there.
+These match **`deckli --help`** / **`deckli download --help`** (wording may wrap in the terminal).
+
+- **`-o, --output <path>`** — **Parent directory** for deck output. Each run writes to **`<parent>/<slug>/`**. If `path` ends with **`.pdf`**, only the **parent** is used (`dirname` of `path`); the filename is ignored.
+- **`--format <pdf|png>`** — **`pdf`** (default): cache slides under `~/.deckli/cache/…`, assemble one PDF, optionally copy slides into **`<slug>/images/`** for the bundle. **`png`**: no PDF; downloads go to **`<slug>/images/`**.
+- **`--no-bundle-images`** — **PDF:** do not copy slides into **`<slug>/images/`** and do not add them to the zip (cache is still used for the PDF). **PNG:** slides stay on disk under **`images/`**, but they are **omitted from the zip**.
+- **`--images`** — **Deprecated** — same as **`--format png`** (stderr warning).
+- **`-m, --markdown`** — Write OCR markdown (default: **on**). Pair with **`--no-markdown`** to disable.
+- **`--no-markdown`** — Skip OCR; output PDF and/or image files only.
+- **`--cleanup`** — Run the cleanup model on OCR text (default: **on**). Writes **`{name}.md`**.
+- **`--no-cleanup`** — Keep **`{name}.ocr.md`** only; no cleaned **`.md`**.
+- **`--force`** — Re-download slides even if they already exist (**`~/.deckli/cache`** for PDF format, or **`<slug>/images`** for PNG). Without it, cached/on-disk slides are reused when possible.
+- **`--no-headless`** — Show Chromium (useful for login or debugging).
+- **`--json`** — Print the run summary as JSON on **stdout** (no banner). **`summary.json`**, the zip, and other files are still written under **`<parent>/<slug>/`**.
+- **`--debug`** — Verbose messages on **stderr** (URLs, extraction, model/title steps).
+- **`--email <address>`** — For “require email” gates: adds `?email=` to the URL and tries to submit the modal. Inbox verification still needs **`deckli login`** or **`--no-headless`** in many cases.
 
 ### Login (for private or email-gated decks)
 
@@ -139,10 +158,10 @@ deckli logout                                 # clear all saved logins
 1. Opens the DocSend page in Chromium (Playwright), using that deck's saved login if you ran `deckli login <url>` for it.
 2. Extracts each slide’s image URL from the page’s `page_data` endpoints.
 3. Downloads all slide images in parallel with retries.
-4. If slide images are already present (output directory for `--images`, or `~/.deckli/cache/<slug>/` for PDF), skips downloading unless `--force` is used; then assembles PDF and/or runs markdown/cleanup/rename as requested.
-5. Writes the PDF and (unless `--no-markdown`) `{name}.raw.md` first under the DocSend slug so you get files quickly.
-6. Detects a friendly name (first-slide text + configured model) and (unless `--no-cleanup`) cleans markdown, then renames the PDF and markdown files (`.raw.md`, `.cleaned.md`) to the friendly name when it differs from the slug.
-7. Prints a **summary** framed by dim horizontal rules (no side borders), with **short path labels** (relative to the current directory, `~/…`, or filenames). Paths are **OSC 8 hyperlinks** (`file://`) in terminals that support them (VS Code, iTerm2, Ghostty, etc.) — click to open in Finder or your default app.
+4. If slide images are already present (**`<slug>/images/`** for PNG format, or `~/.deckli/cache/<slug>/` for PDF), skips downloading unless **`--force`** is used; then assembles PDF and/or runs markdown/cleanup/rename as requested.
+5. Writes the PDF and (unless **`--no-markdown`**) **`{name}.ocr.md`** into **`<parent>/<slug>/`**.
+6. Detects a friendly name (first-slide text + configured model) and (unless **`--no-cleanup`**) cleans markdown, then renames the PDF and markdown files (`.ocr.md`, `.md`) when the name differs from the slug.
+7. Writes **`summary.json`** (same fields as **`--json`** stdout, plus optional `slug`, `deckDir`, etc.), builds **`{name}.zip`** (PDF/markdown/`summary.json`/bundled **`images/`** when applicable), then prints a **summary** with dim rules and **OSC 8** `file://` links where the terminal supports them.
 
 ## Config
 

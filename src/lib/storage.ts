@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { homedir } from "os";
-import { join, isAbsolute } from "path";
+import { dirname, join, isAbsolute } from "path";
 import type { Config } from "./types.js";
 import { DEFAULT_CONFIG } from "./types.js";
 
@@ -89,16 +89,27 @@ export function listProfileKeys(): string[] {
     .map((d) => d.name);
 }
 
-export function resolvePdfPath(
-  output: string | undefined,
-  deckTitle: string,
-  cwd: string
-): string {
+/** Sanitize a deck slug or title for use as a single path segment (same rules as slide cache dirs). */
+export function sanitizeDeckDirName(name: string): string {
+  return name.replace(/[^a-zA-Z0-9_-]/g, "_");
+}
+
+/**
+ * Parent directory that contains per-deck slug folders.
+ * `-o` omitted → `cwd`. `-o` ending in `.pdf` → `dirname` of that path. Otherwise `-o` is the parent dir.
+ */
+export function resolveParentOutput(output: string | undefined, cwd: string): string {
   if (output === undefined || output === "") {
-    return join(cwd, `${deckTitle}.pdf`);
+    return cwd;
   }
+  const abs = isAbsolute(output) ? output : join(cwd, output);
   if (output.toLowerCase().endsWith(".pdf")) {
-    return isAbsolute(output) ? output : join(cwd, output);
+    return dirname(abs);
   }
-  return isAbsolute(output) ? join(output, `${deckTitle}.pdf`) : join(cwd, output, `${deckTitle}.pdf`);
+  return abs;
+}
+
+/** Full path to a deck folder: `parentOutput/<sanitized slug or title>`. */
+export function resolveDeckDir(parentOutput: string, slugOrTitle: string): string {
+  return join(parentOutput, sanitizeDeckDirName(slugOrTitle));
 }

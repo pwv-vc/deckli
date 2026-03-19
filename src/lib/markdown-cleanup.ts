@@ -228,6 +228,12 @@ export function sanitizeFriendlyDeckName(s: string): string {
   return t.slice(0, MAX_FRIENDLY_NAME_LENGTH);
 }
 
+export interface DeriveFriendlyDeckNameResult {
+  name: string;
+  /** Estimated USD for OpenAI title call; null for local model or no API usage. */
+  estimatedCostUsd: number | null;
+}
+
 export interface DeriveFriendlyDeckNameOptions {
   maxInputTokens?: number;
   /** When true, log title-detection progress to stderr. */
@@ -251,7 +257,7 @@ export async function deriveFriendlyDeckName(
   fallback: string,
   modelKey: MarkdownCleanupModelKey = "gpt-4o-mini",
   options: DeriveFriendlyDeckNameOptions = {}
-): Promise<string> {
+): Promise<DeriveFriendlyDeckNameResult> {
   const { maxInputTokens = DEFAULT_MAX_INPUT_TOKENS_TITLE } = options;
   const keyStr = typeof modelKey === "string" ? modelKey : "gpt-4o-mini";
   if (isOpenAiCleanupKey(keyStr)) {
@@ -264,7 +270,7 @@ export async function deriveFriendlyDeckName(
   const text = firstSlideOcrText.trim().slice(0, maxChars);
   if (!text) {
     titleDebugLog(options, "Title detection: no input text, using fallback.");
-    return fallback;
+    return { name: fallback, estimatedCostUsd: null };
   }
 
   const modelId = getModelId(key);
@@ -281,7 +287,7 @@ export async function deriveFriendlyDeckName(
     titleDebugLog(options, "Title model loaded.");
   } catch (err) {
     titleDebugLog(options, `Title model load failed: ${err instanceof Error ? err.message : String(err)}, using fallback.`);
-    return fallback;
+    return { name: fallback, estimatedCostUsd: null };
   }
 
   const prompt = buildChatPrompt(NAME_DECK_SYSTEM_PROMPT, text);
@@ -302,21 +308,27 @@ export async function deriveFriendlyDeckName(
     const rawTitle = fromJson ?? raw;
     if (isPromptLeak(rawTitle)) {
       titleDebugLog(options, "Title detection: model output looked like prompt leak, using fallback.");
-      return fallback;
+      return { name: fallback, estimatedCostUsd: null };
     }
     const friendly = sanitizeFriendlyDeckName(rawTitle);
     if (isPromptLeak(friendly)) {
       titleDebugLog(options, "Title detection: sanitized name looked like prompt leak, using fallback.");
-      return fallback;
+      return { name: fallback, estimatedCostUsd: null };
     }
-    return friendly || fallback;
+    return { name: friendly || fallback, estimatedCostUsd: null };
   } catch (err) {
     titleDebugLog(options, `Title model call failed: ${err instanceof Error ? err.message : String(err)}, using fallback.`);
-    return fallback;
+    return { name: fallback, estimatedCostUsd: null };
   }
 }
 
 const DEFAULT_CONTEXT_LIMIT_TOKENS = 32_000;
+
+export interface CleanupMarkdownResult {
+  markdown: string;
+  /** Estimated USD for OpenAI cleanup; null for local model or no billable API usage. */
+  estimatedCostUsd: number | null;
+}
 
 export interface CleanupMarkdownOptions {
   onProgress?: (current: number, total: number) => void;
@@ -359,11 +371,11 @@ async function cleanupMarkdownWithLocalExtract(
   rawMarkdown: string,
   modelKey: "350m" | "1.2b",
   options: CleanupMarkdownOptions = {}
-): Promise<string> {
+): Promise<CleanupMarkdownResult> {
   const { onProgress, onStreamProgress, onStreamChunk, contextLimitTokens = DEFAULT_CONTEXT_LIMIT_TOKENS, fullDoc: allowFullDoc = false } = options;
   const key = normalizeLocalModelKey(modelKey);
   const parsed = splitMarkdownIntoSlides(rawMarkdown);
-  if (parsed.slides.length === 0) return rawMarkdown;
+  if (parsed.slides.length === 0) return { markdown: rawMarkdown, estimatedCostUsd: null };
 
   const modelLabel = getCleanupModelLabel(key);
   debugLog(options, `Loading cleanup model: ${modelLabel}...`);
@@ -384,7 +396,7 @@ async function cleanupMarkdownWithLocalExtract(
       "[deckli] Markdown cleanup failed to load model:",
       err instanceof Error ? err.message : String(err)
     );
-    return rawMarkdown;
+    return { markdown: rawMarkdown, estimatedCostUsd: null };
   }
 
   const fullPrompt = buildChatPrompt(FULL_DOC_SYSTEM_PROMPT, rawMarkdown);
@@ -429,13 +441,13 @@ async function cleanupMarkdownWithLocalExtract(
         ? out[0].generated_text
         : "";
       const cleaned = extractAssistantReply(generated, fullPrompt);
-      if (cleaned && !looksLikeStructuredOutput(cleaned)) return cleaned;
+      if (cleaned && !looksLikeStructuredOutput(cleaned)) return { markdown: cleaned, estimatedCostUsd: null };
       const fromStruct = extractMarkdownFromStructured(cleaned);
-      if (fromStruct) return fromStruct;
-      return rawMarkdown;
+      if (fromStruct) return { markdown: fromStruct, estimatedCostUsd: null };
+      return { markdown: rawMarkdown, estimatedCostUsd: null };
     } catch (err) {
       debugLog(options, `Full-doc cleanup failed: ${err instanceof Error ? err.message : String(err)}`);
-      return rawMarkdown;
+      return { markdown: rawMarkdown, estimatedCostUsd: null };
     }
   }
 
@@ -474,7 +486,7 @@ async function cleanupMarkdownWithLocalExtract(
     }
   }
 
-  return reassembleMarkdown(parsed, cleanedBodies);
+  return { markdown: reassembleMarkdown(parsed, cleanedBodies), estimatedCostUsd: null };
 }
 
 /**
@@ -484,7 +496,7 @@ export async function cleanupMarkdownWithExtract(
   rawMarkdown: string,
   modelKey: MarkdownCleanupModelKey,
   options: CleanupMarkdownOptions = {}
-): Promise<string> {
+): Promise<CleanupMarkdownResult> {
   const keyStr = typeof modelKey === "string" ? modelKey : "gpt-4o-mini";
   if (isOpenAiCleanupKey(keyStr)) {
     const { cleanupMarkdownWithOpenAi } = await import("./openai-cleanup.js");

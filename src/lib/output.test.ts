@@ -2,7 +2,9 @@ import { describe, it, expect } from "vitest";
 import {
   formatError,
   formatSize,
+  formatEstimatedUsd,
   formatDownloadSummary,
+  buildDownloadSummaryPayload,
   stripTerminalFormatting,
   shortPathLabel,
   terminalDisplayWidth,
@@ -45,6 +47,13 @@ describe("terminalDisplayWidth", () => {
 describe("shortPathLabel", () => {
   it("uses basename for paths outside cwd", () => {
     expect(shortPathLabel("/very/long/path/to/file.pdf")).toBe("file.pdf");
+  });
+});
+
+describe("formatEstimatedUsd", () => {
+  it("formats dollar estimate or em dash when null", () => {
+    expect(formatEstimatedUsd(0.000042)).toBe("~$0.000042");
+    expect(formatEstimatedUsd(null)).toBe("—");
   });
 });
 
@@ -161,6 +170,24 @@ describe("formatDownloadSummary", () => {
     expect(out).toContain("11.8 KB");
   });
 
+  it("includes AI cost lines in plain output when present", () => {
+    const result = {
+      successes: 10,
+      failures: 0,
+      totalBytes: 1024,
+      failedSlides: [] as string[],
+      slideCount: 10,
+      outputPath: "/path/to/deck.pdf",
+      titleAiCostUsd: 0.0001 as number | null,
+      cleanupAiCostUsd: null as number | null,
+    };
+    const out = formatDownloadSummary(result, "My Deck", "/path/to/deck.pdf", 1000, "plain");
+    expect(stripTerminalFormatting(out)).toContain("AI title (est.):");
+    expect(stripTerminalFormatting(out)).toContain("~$0.000100");
+    expect(stripTerminalFormatting(out)).toContain("AI cleanup (est.):");
+    expect(stripTerminalFormatting(out)).toContain("AI cleanup (est.): —");
+  });
+
   it("includes rawMarkdownChars and cleanedMarkdownChars in JSON when present", () => {
     const result = {
       successes: 10,
@@ -180,5 +207,45 @@ describe("formatDownloadSummary", () => {
     expect(parsed.rawMarkdownBytes).toBe(5100);
     expect(parsed.cleanedMarkdownChars).toBe(4500);
     expect(parsed.cleanedMarkdownBytes).toBe(4600);
+  });
+
+  it("buildDownloadSummaryPayload includes optional extras", () => {
+    const result = {
+      successes: 10,
+      failures: 0,
+      totalBytes: 1024,
+      failedSlides: [] as string[],
+      slideCount: 10,
+      outputPath: "/deck/out.pdf",
+    };
+    const payload = buildDownloadSummaryPayload(result, "Deck", "/deck/out.pdf", 1000, {
+      slug: "abc123",
+      deckDir: "/parent/abc123",
+      parentOutput: "/parent",
+      format: "pdf",
+      bundleImages: true,
+      summaryJsonPath: "/parent/abc123/summary.json",
+    });
+    expect(payload.slug).toBe("abc123");
+    expect(payload.deckDir).toBe("/parent/abc123");
+    expect(payload.format).toBe("pdf");
+    expect(payload.bundleImages).toBe(true);
+  });
+
+  it("includes titleAiCostUsd and cleanupAiCostUsd in JSON when present", () => {
+    const result = {
+      successes: 10,
+      failures: 0,
+      totalBytes: 1024,
+      failedSlides: [] as string[],
+      slideCount: 10,
+      outputPath: "/path/to.pdf",
+      titleAiCostUsd: null,
+      cleanupAiCostUsd: 0.05,
+    };
+    const out = formatDownloadSummary(result, "My Deck", "/path/to.pdf", 1000, "json");
+    const parsed = JSON.parse(out);
+    expect(parsed.titleAiCostUsd).toBeNull();
+    expect(parsed.cleanupAiCostUsd).toBe(0.05);
   });
 });

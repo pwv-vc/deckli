@@ -139,22 +139,28 @@ export const OPENAI_MAX_COMPLETION_TOKENS = 16_384;
  * When the deck fits {@link OPENAI_FULL_DOC_CONTEXT_BUDGET_TOKENS}, uses **one** full-document request
  * (ignores `markdownCleanupFullDoc` / slide-by-slide). Otherwise falls back to slide-by-slide.
  */
+export interface OpenAiCleanupMarkdownResult {
+  markdown: string;
+  /** Sum of per-call estimates for slide-by-slide; single call for full-doc. Null when no billable usage or unknown pricing. */
+  estimatedCostUsd: number | null;
+}
+
 export async function cleanupMarkdownWithOpenAi(
   rawMarkdown: string,
   modelId: string,
   options: CleanupMarkdownOptions = {}
-): Promise<string> {
+): Promise<OpenAiCleanupMarkdownResult> {
   const { onProgress, debug } = options;
   const client = getOpenAiClient();
   if (!client) {
     console.warn(
       "[deckli] OPENAI_API_KEY is not set; skipping markdown cleanup. Set it in .env or the environment to use OpenAI models."
     );
-    return rawMarkdown;
+    return { markdown: rawMarkdown, estimatedCostUsd: null };
   }
 
   const parsed = splitMarkdownIntoSlides(rawMarkdown);
-  if (parsed.slides.length === 0) return rawMarkdown;
+  if (parsed.slides.length === 0) return { markdown: rawMarkdown, estimatedCostUsd: null };
 
   const inputTokens = estimateTokens(FULL_DOC_SYSTEM_PROMPT + rawMarkdown);
   const outputReserve = Math.ceil(estimateTokens(rawMarkdown) * 1.2);
@@ -180,16 +186,17 @@ export async function cleanupMarkdownWithOpenAi(
         maxTokens
       );
       logOpenAiDebug("cleanup (full-doc)", modelId, metrics, debug);
-      if (cleaned && !looksLikeStructuredOutput(cleaned)) return cleaned;
+      const est = metrics.estimatedCostUsd ?? null;
+      if (cleaned && !looksLikeStructuredOutput(cleaned)) return { markdown: cleaned, estimatedCostUsd: est };
       const fromStruct = extractMarkdownFromStructured(cleaned);
-      if (fromStruct) return fromStruct;
-      return rawMarkdown;
+      if (fromStruct) return { markdown: fromStruct, estimatedCostUsd: est };
+      return { markdown: rawMarkdown, estimatedCostUsd: est };
     } catch (err) {
       console.warn(
         "[deckli] OpenAI cleanup failed:",
         err instanceof Error ? err.message : String(err)
       );
-      return rawMarkdown;
+      return { markdown: rawMarkdown, estimatedCostUsd: null };
     }
   }
 
@@ -248,7 +255,15 @@ export async function cleanupMarkdownWithOpenAi(
     console.warn(parts.join(" | "));
   }
 
-  return reassembleMarkdown(parsed, cleanedBodies);
+  return {
+    markdown: reassembleMarkdown(parsed, cleanedBodies),
+    estimatedCostUsd: costCalls > 0 ? sumCost : null,
+  };
+}
+
+export interface OpenAiDeriveTitleResult {
+  name: string;
+  estimatedCostUsd: number | null;
 }
 
 /**
@@ -259,27 +274,28 @@ export async function deriveFriendlyDeckNameWithOpenAi(
   fallback: string,
   modelId: string,
   options: DeriveFriendlyDeckNameOptions = {}
-): Promise<string> {
+): Promise<OpenAiDeriveTitleResult> {
   const { maxInputTokens = 500, debug } = options;
   const client = getOpenAiClient();
   if (!client) {
     if (debug) console.warn("[deckli] OPENAI_API_KEY missing; using fallback deck name.");
-    return fallback;
+    return { name: fallback, estimatedCostUsd: null };
   }
 
   const maxChars = maxInputTokens * 4;
   const text = firstSlideOcrText.trim().slice(0, maxChars);
-  if (!text) return fallback;
+  if (!text) return { name: fallback, estimatedCostUsd: null };
 
   try {
     const { content: raw, metrics } = await chatCompletion(client, modelId, NAME_DECK_SYSTEM_PROMPT, text, 128);
     logOpenAiDebug("title detection", modelId, metrics, debug);
+    const est = metrics.estimatedCostUsd ?? null;
     const fromJson = parseTitleFromJson(raw);
     const rawTitle = fromJson ?? raw;
-    if (isPromptLeak(rawTitle)) return fallback;
+    if (isPromptLeak(rawTitle)) return { name: fallback, estimatedCostUsd: est };
     const friendly = sanitizeFriendlyDeckName(rawTitle);
-    if (isPromptLeak(friendly)) return fallback;
-    return friendly || fallback;
+    if (isPromptLeak(friendly)) return { name: fallback, estimatedCostUsd: est };
+    return { name: friendly || fallback, estimatedCostUsd: est };
   } catch (err) {
     if (debug) {
       console.warn(
@@ -287,6 +303,6 @@ export async function deriveFriendlyDeckNameWithOpenAi(
         err instanceof Error ? err.message : String(err)
       );
     }
-    return fallback;
+    return { name: fallback, estimatedCostUsd: null };
   }
 }
