@@ -139,6 +139,8 @@ export interface DownloadOptions {
   headless?: boolean;
   json?: boolean;
   debug?: boolean;
+  /** For email-gated decks: `?email=` on the URL and automated Continue on the modal when possible. */
+  email?: string;
   /** OCR markdown output. Omitted or `undefined` defaults to `true` (CLI: `--no-markdown` to disable). */
   markdown?: boolean;
   /** Model cleanup of OCR markdown. Omitted or `undefined` defaults to `true` (CLI: `--no-cleanup` to disable). */
@@ -254,6 +256,7 @@ export async function runDownload(url: string, options: DownloadOptions = {}): P
     deckInfo = await extractSlideUrls(url.trim(), {
       headless,
       profileKey,
+      gateEmail: options.email?.trim() || undefined,
       debug: options.debug,
       onStatus: (msg) => (spinner.text = `${CLI_ICONS_COLOR.browser} ${msg}`),
     });
@@ -699,6 +702,10 @@ export function registerDownloadCommand(program: Command): void {
     .option("--no-headless", "Show the browser window during extraction")
     .option("--json", "Output result as JSON")
     .option("--debug", "Log debug info to stderr")
+    .option(
+      "--email <address>",
+      "Email for require-email gates: add ?email= to the URL and auto-click Continue when the modal appears"
+    )
     .action(async (url: string | undefined, options: DownloadOptions) => {
       const json = options.json ?? false;
       if (!url?.trim()) {

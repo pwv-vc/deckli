@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   parseDocSendUrl,
   getProfileKeyFromUrl,
+  appendEmailQueryParam,
   EXTRACT_INFO_JS,
 } from "./extractor.js";
 
@@ -36,6 +37,26 @@ describe("parseDocSendUrl", () => {
     expect(() => parseDocSendUrl("https://docsend.com/other/abc")).toThrow("Invalid DocSend URL");
     expect(() => parseDocSendUrl("not-a-url")).toThrow("Invalid DocSend URL");
     expect(() => parseDocSendUrl("")).toThrow("Invalid DocSend URL");
+  });
+});
+
+describe("appendEmailQueryParam", () => {
+  it("appends email query param", () => {
+    expect(appendEmailQueryParam("https://docsend.com/view/abc", "a@b.co")).toBe(
+      "https://docsend.com/view/abc?email=a%40b.co"
+    );
+  });
+
+  it("merges with existing query string", () => {
+    expect(
+      appendEmailQueryParam("https://docsend.com/view/abc?foo=1", "x@y.z")
+    ).toBe("https://docsend.com/view/abc?foo=1&email=x%40y.z");
+  });
+
+  it("returns URL unchanged for empty email", () => {
+    expect(appendEmailQueryParam("https://docsend.com/view/abc", "  ")).toBe(
+      "https://docsend.com/view/abc"
+    );
   });
 });
 

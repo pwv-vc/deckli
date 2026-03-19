@@ -1,4 +1,5 @@
 import { chromium } from "playwright";
+import type { Page } from "playwright";
 import type { DeckInfo } from "./types.js";
 import {
   EmailGateError,
@@ -93,6 +94,18 @@ export function parseDocSendUrl(url: string): string | null {
 }
 
 /** Profile key for per-deck login storage: slug for /view/SLUG, or "v-SPACE-NAME" for /v/SPACE/NAME */
+/**
+ * Appends `email` as a query parameter so DocSend may prefill the visitor email field.
+ * (Behavior depends on DocSend; some links ignore unknown params.)
+ */
+export function appendEmailQueryParam(url: string, email: string): string {
+  const trimmed = email.trim();
+  if (!trimmed) return url;
+  const u = new URL(url);
+  u.searchParams.set("email", trimmed);
+  return u.toString();
+}
+
 export function getProfileKeyFromUrl(url: string): string {
   const match = url.match(DOCSEND_URL_PATTERN);
   if (!match) {
@@ -119,6 +132,10 @@ export interface ExtractOptions {
   headless: boolean;
   /** If set, use this profile key's saved login (per-deck). Ignored if that profile does not exist. */
   profileKey: string | null;
+  /**
+   * For “require email” decks: added to the URL as `?email=` and used to fill/submit the Continue modal if slides do not load immediately.
+   */
+  gateEmail?: string;
   /** When true, log debug info to stderr (page URL, evaluate result, etc.). */
   debug?: boolean;
   onStatus?: (message: string) => void;
@@ -130,11 +147,48 @@ function debugLog(enable: boolean, ...args: unknown[]): void {
   }
 }
 
+/** Fill email field (if present) and click Continue; return true once slide carousel is visible. */
+async function tryPassEmailGate(
+  page: Page,
+  email: string,
+  debug: boolean
+): Promise<boolean> {
+  const addr = email.trim();
+  if (!addr) return false;
+
+  const emailInput = page.locator('input[type="email"]').first();
+  if ((await emailInput.count()) === 0) {
+    debugLog(debug, "tryPassEmailGate: no email input");
+    return false;
+  }
+
+  const current = await emailInput.inputValue().catch(() => "");
+  if (!current.trim()) {
+    await emailInput.fill(addr);
+  }
+
+  const continueBtn = page.getByRole("button", { name: /^Continue$/i }).first();
+  if ((await continueBtn.count()) === 0) {
+    debugLog(debug, "tryPassEmailGate: no Continue button");
+    return false;
+  }
+
+  await continueBtn.click();
+
+  try {
+    await page.waitForSelector(".carousel-inner .item", { timeout: 25_000 });
+    return true;
+  } catch {
+    debugLog(debug, "tryPassEmailGate: carousel did not appear after Continue");
+    return false;
+  }
+}
+
 export async function extractSlideUrls(
   url: string,
   options: ExtractOptions
 ): Promise<DeckInfo> {
-  const { headless, profileKey, debug = false, onStatus } = options;
+  const { headless, profileKey, gateEmail, debug = false, onStatus } = options;
 
   const report = (msg: string) => onStatus?.(msg);
 
@@ -177,10 +231,12 @@ export async function extractSlideUrls(
 
   report("Loading page (this may take a while)...");
 
+  const navigateUrl = gateEmail ? appendEmailQueryParam(url, gateEmail) : url;
+
   try {
-    await page.goto(url, { waitUntil: "networkidle", timeout: 30_000 });
+    await page.goto(navigateUrl, { waitUntil: "networkidle", timeout: 30_000 });
   } catch {
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
+    await page.goto(navigateUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
   }
 
   const urlAfterGoto = page.url();
@@ -188,17 +244,33 @@ export async function extractSlideUrls(
 
   report("Waiting for slides...");
 
+  let slidesVisible = false;
   try {
     await page.waitForSelector(".carousel-inner .item", { timeout: 15_000 });
+    slidesVisible = true;
   } catch {
-    const emailForm = await page.locator(
+    // may be behind email modal
+  }
+
+  if (!slidesVisible && gateEmail) {
+    report("Submitting email gate...");
+    slidesVisible = await tryPassEmailGate(page, gateEmail, debug);
+  }
+
+  if (!slidesVisible) {
+    const emailForm = page.locator(
       'input[type="email"], form[action*="email"], .visitor-email'
     ).first();
     const hasEmailForm = (await emailForm.count()) > 0;
     await context.close();
     if (hasEmailForm) {
+      if (gateEmail) {
+        throw new EmailGateError(
+          "Could not reach slides after email gate. The link may require verifying your inbox (DocSend email authentication), or the page blocked automated access. Try --no-headless to complete any steps manually, or deckli login <url>."
+        );
+      }
       throw new EmailGateError(
-        "This deck requires email verification to view. Only public (no-email) decks are supported. Try 'deckli login <url>' for this deck or use --no-headless to log in manually."
+        "This deck requires an email to view. Pass --email <address> to prefill and submit the gate, try 'deckli login <url>' for a saved session, or use --no-headless to finish manually."
       );
     }
     throw new ExtractionError(

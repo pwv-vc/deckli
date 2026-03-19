@@ -86,6 +86,7 @@ If detection fails (no slides, empty OCR, or model error), the DocSend deck slug
 - **`--force`** — Re-download slide images even if they are already present (output dir for `--images`, or cache for PDF). Without `--force`, existing images are reused and the tool only re-runs PDF assembly and/or markdown/cleanup/rename as requested.
 - **`--no-headless`** — Show the browser window during extraction (useful for debugging or one-off login).
 - **`--json`** — Output machine-readable JSON (no banner, no progress text; result only).
+- **`--email <address>`** — For decks that show a “require email” gate: adds `?email=` to the link (DocSend may prefill the field) and, if slides do not load immediately, fills the email input and clicks **Continue**. Decks that require **inbox verification** (DocSend “email authentication”) still need a human or a saved session—use `deckli login` or `--no-headless` if automation stops there.
 
 ### Login (for private or email-gated decks)
 
@@ -106,6 +107,14 @@ Login is **per deck**: each DocSend URL has its own saved session, so you can us
    ```
 
 To use a different email for another deck, run `deckli login <other-url>` and log in with the other account; sessions are stored separately per deck.
+
+For a **simple** email-only gate (enter email → Continue), you can try:
+
+```bash
+deckli --email you@company.com https://docsend.com/view/XXXXXX
+```
+
+If DocSend sends a verification link, `--email` alone is not enough; use login or a headed browser as above.
 
 ### Logout
 

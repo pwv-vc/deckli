@@ -37,8 +37,12 @@ program
   .option("--no-headless", "Show the browser window during extraction")
   .option("--json", "Output result as JSON")
   .option("--debug", "Log debug info to stderr (page URL, slide info, etc.)")
+  .option(
+    "--email <address>",
+    "Email for require-email gates: add ?email= to the URL and auto-click Continue when the modal appears"
+  )
   .argument("[url]", "DocSend deck URL (e.g. https://docsend.com/view/XXXXXX)")
-  .action(async (url: string | undefined, opts: { output?: string; images?: boolean; headless?: boolean; json?: boolean; debug?: boolean; markdown?: boolean; cleanup?: boolean; force?: boolean }) => {
+  .action(async (url: string | undefined, opts: { output?: string; images?: boolean; headless?: boolean; json?: boolean; debug?: boolean; markdown?: boolean; cleanup?: boolean; force?: boolean; email?: string }) => {
     if (url?.trim()) {
       const json = opts.json ?? false;
       if (!json) showBanner();
@@ -52,6 +56,7 @@ program
           markdown: opts.markdown,
           cleanup: opts.cleanup,
           force: opts.force,
+          email: opts.email,
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
