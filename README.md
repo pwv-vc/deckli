@@ -192,7 +192,7 @@ pnpm build            # Build with tsup
 pnpm test             # Run vitest
 ```
 
-**CLI icons** — Status symbols for ora spinners and the download summary are defined in `src/config/cli-icons.ts` (`CLI_ICONS`). Edit that file to swap characters app-wide (defaults use the [`figures`](https://github.com/sindresorhus/figures) package).
+**CLI icons** — Status symbols for ora spinners and the download summary are defined in `src/config/cli-icons.ts`: raw glyphs in `CLI_ICONS`, semantic ANSI colors in `CLI_ICONS_COLOR` (picocolors). Edit that file to swap characters or colors app-wide (glyphs use the [`figures`](https://github.com/sindresorhus/figures) package).
 
 ## License
 

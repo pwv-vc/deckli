@@ -3,7 +3,7 @@ import { basename, dirname, relative, sep } from "path";
 import { pathToFileURL } from "url";
 import stringWidth from "string-width";
 import pc from "picocolors";
-import { CLI_ICONS } from "../config/cli-icons.js";
+import { CLI_ICONS, CLI_ICONS_COLOR } from "../config/cli-icons.js";
 import type { DeckDownloadResult, DownloadResult } from "./types.js";
 
 /** Strip ANSI colors and OSC 8 hyperlinks for measuring visible width. */
@@ -130,7 +130,7 @@ export function formatDownloadSummary(
   }
 
   const lines: string[] = [
-    `${CLI_ICONS.slides} ${pc.bold("Slides saved:")} ${result.successes}/${result.slideCount}`,
+    `${CLI_ICONS_COLOR.slides} ${pc.bold("Slides saved:")} ${result.successes}/${result.slideCount}`,
   ];
   if (result.failures > 0) {
     lines.push(pc.red(`${CLI_ICONS.failed} ${pc.bold("Failed:")} ${result.failures}`));
@@ -140,42 +140,40 @@ export function formatDownloadSummary(
   }
   const isPdf = summaryOutputPath.toLowerCase().endsWith(".pdf");
   if (isPdf) {
-    lines.push(`${CLI_ICONS.pdf} ${pc.bold("PDF:")} ${formatSize(result.totalBytes)}`);
+    lines.push(`${CLI_ICONS_COLOR.pdf} ${pc.bold("PDF:")} ${formatSize(result.totalBytes)}`);
   } else {
-    lines.push(`${CLI_ICONS.totalSize} ${pc.bold("Total size:")} ${formatSize(result.totalBytes)}`);
+    lines.push(`${CLI_ICONS_COLOR.totalSize} ${pc.bold("Total size:")} ${formatSize(result.totalBytes)}`);
   }
-  lines.push(`${CLI_ICONS.output} ${pc.bold("Output:")} ${linkedPath(summaryOutputPath)}`);
+  lines.push(`${CLI_ICONS_COLOR.output} ${pc.bold("Output:")} ${linkedPath(summaryOutputPath)}`);
   if (markdownPath) {
-    lines.push(`${CLI_ICONS.markdown} ${pc.bold("Markdown:")} ${linkedPath(markdownPath)}`);
+    lines.push(`${CLI_ICONS_COLOR.markdown} ${pc.bold("Markdown:")} ${linkedPath(markdownPath)}`);
   }
   if (summaryResult.zipPath) {
-    lines.push(`${CLI_ICONS.archive} ${pc.bold("Archive:")} ${linkedPath(summaryResult.zipPath)}`);
+    lines.push(`${CLI_ICONS_COLOR.archive} ${pc.bold("Archive:")} ${linkedPath(summaryResult.zipPath)}`);
   }
   if (summaryResult.imagePaths && summaryResult.imagePaths.length > 0) {
     const n = summaryResult.imagePaths.length;
     const imgDir = dirname(summaryResult.imagePaths[0]);
     const folderLink = terminalHyperlink(fileUrl(imgDir), shortPathLabel(imgDir));
-    lines.push(`${CLI_ICONS.images} ${pc.bold("Images:")} ${n} files · ${folderLink}`);
+    lines.push(`${CLI_ICONS_COLOR.images} ${pc.bold("Images:")} ${n} files · ${folderLink}`);
   }
   if (summaryResult.rawMarkdownChars != null) {
     const sizeStr = summaryResult.rawMarkdownBytes != null ? formatSize(summaryResult.rawMarkdownBytes) : "";
     lines.push(
-      `${CLI_ICONS.rawMarkdown} ${pc.bold("Raw markdown:")} ${summaryResult.rawMarkdownChars.toLocaleString()} chars${sizeStr ? ` (${sizeStr})` : ""}`
+      `${CLI_ICONS_COLOR.rawMarkdown} ${pc.bold("Raw markdown:")} ${summaryResult.rawMarkdownChars.toLocaleString()} chars${sizeStr ? ` (${sizeStr})` : ""}`
     );
   }
   if (summaryResult.cleanedMarkdownChars != null) {
     const sizeStr = summaryResult.cleanedMarkdownBytes != null ? formatSize(summaryResult.cleanedMarkdownBytes) : "";
     lines.push(
-      `${CLI_ICONS.cleanedMarkdown} ${pc.bold("Cleaned markdown:")} ${summaryResult.cleanedMarkdownChars.toLocaleString()} chars${sizeStr ? ` (${sizeStr})` : ""}`
+      `${CLI_ICONS_COLOR.cleanedMarkdown} ${pc.bold("Cleaned markdown:")} ${summaryResult.cleanedMarkdownChars.toLocaleString()} chars${sizeStr ? ` (${sizeStr})` : ""}`
     );
   }
 
-  const accent = result.failures === 0 ? pc.green : pc.yellow;
-  const title = accent(
+  const title =
     result.failures === 0
-      ? `${CLI_ICONS.done} Done in ${(elapsedMs / 1000).toFixed(1)}s`
-      : `${CLI_ICONS.warning} Done in ${(elapsedMs / 1000).toFixed(1)}s`
-  );
+      ? `${CLI_ICONS_COLOR.done} ${pc.bold(pc.green(`Done in ${(elapsedMs / 1000).toFixed(1)}s`))}`
+      : `${CLI_ICONS_COLOR.warning} ${pc.bold(pc.yellow(`Done in ${(elapsedMs / 1000).toFixed(1)}s`))}`;
 
   const indent = "  ";
   const cols = process.stdout.columns || 80;
