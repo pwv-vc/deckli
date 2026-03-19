@@ -1,0 +1,13 @@
+node_modules
+dist
+*.log
+.DS_Store
+.env
+.env.*
+coverage
+.vitest
+.decks
+.pnpm-store
+.pnpn-store/*/**
+eng.traineddata
+
