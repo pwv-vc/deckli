@@ -14,5 +14,8 @@ See [cli/taste.md](cli/taste.md)
 - In the final CLI output summary, always show AI costs/token usage if an OpenAI model was used (local models show nothing). Confidence: 0.75
 - Save all deck artifacts (PDF, markdown, images) together as a named zip archive. Confidence: 0.75
 
+# documentation
+- Always keep the README updated with a project directory structure section showing where files live and what each directory is for, so the codebase is easy to navigate. Confidence: 0.90
+
 # architecture
 See [architecture/taste.md](architecture/taste.md)

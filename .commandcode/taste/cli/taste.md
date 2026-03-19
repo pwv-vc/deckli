@@ -1,4 +1,4 @@
-# Cli
+# cli
 - Default boolean feature flags to true and use `--no-X` pattern (e.g. `--no-markdown`, `--no-cleanup`) to disable them. Confidence: 0.80
 - Use pnpm as the package manager for CLI projects. Confidence: 1.00
 - Use TypeScript for CLI projects. Confidence: 0.95
@@ -22,3 +22,5 @@
 - Use ANSI Shadow font for ASCII art at large terminal widths and ANSI Compact for small widths. Confidence: 0.85
 - Use minimal white, gray, and black colors for ASCII art banners. Confidence: 0.85
 - Check if package is publishable using `npx can-i-publish` before building or publishing. Confidence: 0.85
+- Add explicit `--json` option to each subcommand rather than reaching up to parent program opts. Confidence: 0.80
+- Add `"files": ["dist", "README.md"]` to package.json to prevent src/, tests, and large assets from being published. Confidence: 0.80

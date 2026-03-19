@@ -9,5 +9,5 @@ coverage
 .decks
 .pnpm-store
 .pnpn-store/*/**
-eng.traineddata
+*.traineddata
 assets
