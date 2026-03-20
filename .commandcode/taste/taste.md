@@ -14,7 +14,8 @@ See [cli/taste.md](cli/taste.md)
 # output
 See [output/taste.md](output/taste.md)
 # documentation
-- Always keep the README updated with a project directory structure section showing where files live and what each directory is for, so the codebase is easy to navigate. Confidence: 0.90
+- Always update the README when adding new features or changing project structure: include a directory structure section showing where files live, and document new CLI flags, commands, and output artifacts. Confidence: 0.95
+- When a plugin/extension architecture is added, include a dedicated README section that: lists all available plugins with their IDs, output files, and descriptions; and shows a step-by-step guide for implementing a new plugin (create the file, implement the interface, register in the index). Confidence: 0.90
 
 # architecture
 See [architecture/taste.md](architecture/taste.md)

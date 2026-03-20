@@ -43,6 +43,8 @@ const raw = {
   aiTitleCost: figures.lozengeOutline,
   /** Estimated API cost — markdown cleanup (OpenAI). */
   aiCleanupCost: figures.circleDotted,
+  /** Post-processing plugin output file. */
+  postProcess: figures.lozenge,
 } as const;
 
 export type CliIconKey = keyof typeof raw;
@@ -78,4 +80,5 @@ export const CLI_ICONS_COLOR: { [K in CliIconKey]: string } = {
   line: pc.dim(raw.line),
   aiTitleCost: pc.yellow(raw.aiTitleCost),
   aiCleanupCost: pc.yellow(raw.aiCleanupCost),
+  postProcess: pc.cyan(raw.postProcess),
 };

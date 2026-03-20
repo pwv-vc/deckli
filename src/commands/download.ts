@@ -45,8 +45,25 @@ import { listSlideFiles, totalSlideBytesInDir, dirHasAllSlides } from "../lib/fs
 import { createStreamWriteBuffer, lastCharsPreview } from "../lib/stream-utils.js";
 import { DEFAULT_CONTEXT_LIMIT_TOKENS } from "../lib/constants.js";
 import type { Config, DeckInfo, DownloadOptions, DownloadResult } from "../lib/types.js";
+import {
+  DEFAULT_POST_PROCESS_STEPS,
+  runPostProcessWorkflow,
+  type PostProcessResult,
+} from "../lib/post-processing.js";
 
 export type { DownloadOptions };
+
+/** Build the list of post-processing plugin IDs to run, filtered by per-step CLI flags. */
+function resolvePostProcessSteps(config: Config, options: DownloadOptions): string[] {
+  const base = config.postProcessSteps ?? DEFAULT_POST_PROCESS_STEPS;
+  const flags: Record<string, boolean | undefined> = {
+    summary: options.summary,
+    team: options.team,
+    links: options.links,
+    whatif: options.whatif,
+  };
+  return base.filter((id) => flags[id] !== false);
+}
 
 function makeStreamProgressCallback(
   spinner: Ora
@@ -355,6 +372,28 @@ async function runPngDownload(
     }
   }
 
+  let postProcessResults: PostProcessResult[] = [];
+  if (finalMd && finalMd !== rawMd) {
+    const activeSteps = resolvePostProcessSteps(config, options);
+    if (activeSteps.length > 0) {
+      const modelKey = config.markdownCleanupModel ?? "gpt-4o-mini";
+      postProcessResults = await runPostProcessWorkflow(finalMd, outputTitle, deckDir, activeSteps, modelKey, {
+        debug: options.debug,
+        onPluginStart: (_id, label) => { if (!json) spinner.start(`${CLI_ICONS_COLOR.postProcess} ${label}...`); },
+        onPluginDone: (r) => { if (!json) r.success ? spinner.succeed(`${CLI_ICONS_COLOR.success} ${r.pluginId} written`) : spinner.warn(`${r.pluginId} failed`); },
+      });
+    }
+  }
+
+  const postProcessPaths: Record<string, string> = {};
+  const postProcessCosts: Record<string, number | null> = {};
+  for (const r of postProcessResults) {
+    if (r.success) {
+      postProcessPaths[r.pluginId] = r.outputPath;
+      postProcessCosts[r.pluginId] = r.estimatedCostUsd;
+    }
+  }
+
   const elapsed = Date.now() - startTime;
   const summaryJsonPath = join(deckDir, "summary.json");
   const zipPath = join(deckDir, `${outputTitle}.zip`);
@@ -376,6 +415,7 @@ async function runPngDownload(
       cleanedMarkdownChars: finalMd.length,
       cleanedMarkdownBytes: Buffer.byteLength(finalMd, "utf-8"),
     }),
+    ...(Object.keys(postProcessPaths).length > 0 && { postProcessPaths, postProcessCosts }),
   };
 
   const extras: DownloadSummaryPayloadExtras = {
@@ -399,6 +439,7 @@ async function runPngDownload(
       summaryJson: summaryJsonPath,
       imagePaths: zipImagePaths,
       imagePathsInSubfolder: bundleImages && zipImagePaths.length > 0,
+      postProcessPaths: Object.values(postProcessPaths),
     },
     deckDir,
     spinner,
@@ -577,6 +618,28 @@ async function runPdfDownload(
     }
   }
 
+  let postProcessResults: PostProcessResult[] = [];
+  if (finalMd && finalMd !== rawMd) {
+    const activeSteps = resolvePostProcessSteps(config, options);
+    if (activeSteps.length > 0) {
+      const modelKey = config.markdownCleanupModel ?? "gpt-4o-mini";
+      postProcessResults = await runPostProcessWorkflow(finalMd, outputTitle, deckDir, activeSteps, modelKey, {
+        debug: options.debug,
+        onPluginStart: (_id, label) => { if (!json) spinner.start(`${CLI_ICONS_COLOR.postProcess} ${label}...`); },
+        onPluginDone: (r) => { if (!json) r.success ? spinner.succeed(`${CLI_ICONS_COLOR.success} ${r.pluginId} written`) : spinner.warn(`${r.pluginId} failed`); },
+      });
+    }
+  }
+
+  const postProcessPaths: Record<string, string> = {};
+  const postProcessCosts: Record<string, number | null> = {};
+  for (const r of postProcessResults) {
+    if (r.success) {
+      postProcessPaths[r.pluginId] = r.outputPath;
+      postProcessCosts[r.pluginId] = r.estimatedCostUsd;
+    }
+  }
+
   const elapsed = Date.now() - startTime;
   const summaryJsonPath = join(deckDir, "summary.json");
   const predictedZipPath = join(deckDir, `${outputTitle}.zip`);
@@ -601,6 +664,7 @@ async function runPdfDownload(
       cleanedMarkdownChars: finalMd.length,
       cleanedMarkdownBytes: Buffer.byteLength(finalMd, "utf-8"),
     }),
+    ...(Object.keys(postProcessPaths).length > 0 && { postProcessPaths, postProcessCosts }),
   };
 
   const extras: DownloadSummaryPayloadExtras = {
@@ -625,6 +689,7 @@ async function runPdfDownload(
       summaryJson: summaryJsonPath,
       imagePaths: zipImagePaths,
       imagePathsInSubfolder: bundleImages && zipImagePaths.length > 0,
+      postProcessPaths: Object.values(postProcessPaths),
     },
     deckDir,
     spinner,
@@ -679,6 +744,10 @@ export function registerDownloadCommand(program: Command): void {
     .option("--no-markdown", "Skip OCR markdown (PDF or PNG files only)")
     .option("--cleanup", "Run model cleanup on OCR text (default: on)")
     .option("--no-cleanup", "Skip cleanup; keep raw .ocr.md only")
+    .option("--no-summary", "Skip deck summary post-processing step")
+    .option("--no-team", "Skip team extraction post-processing step")
+    .option("--no-links", "Skip links extraction post-processing step")
+    .option("--no-whatif", "Skip What If statement post-processing step")
     .option(
       "--force",
       "Re-download slides even if already present (~/.deckli/cache for pdf, or <slug>/images for png)"

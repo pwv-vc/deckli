@@ -1,5 +1,6 @@
 # cli
 - Default boolean feature flags to true and use `--no-X` pattern (e.g. `--no-markdown`, `--no-cleanup`) to disable them. Confidence: 0.80
+- Post-processing pipeline steps are opt-out, not opt-in: each step runs by default and is individually disabled with its own `--no-<step>` flag (e.g. `--no-summary`, `--no-whatif`), not a single `--post-process` toggle. Confidence: 0.75
 - Use pnpm as the package manager for CLI projects. Confidence: 1.00
 - Use TypeScript for CLI projects. Confidence: 0.95
 - Use tsup as the build tool for CLI projects. Confidence: 0.95

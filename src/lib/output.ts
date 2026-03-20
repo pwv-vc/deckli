@@ -105,6 +105,10 @@ export interface DownloadSummaryResult extends DownloadResult {
   titleAiCostUsd?: number | null;
   /** Estimated OpenAI cost for markdown cleanup; null = local / no billable call. Set when cleanup ran. */
   cleanupAiCostUsd?: number | null;
+  /** Output paths keyed by plugin ID for each successful post-processing step. */
+  postProcessPaths?: Record<string, string>;
+  /** Estimated OpenAI cost per plugin ID; null = no billable call or unknown pricing. */
+  postProcessCosts?: Record<string, number | null>;
 }
 
 /** Optional fields written to `summary.json` alongside stdout `--json`. */
@@ -148,6 +152,12 @@ export function buildDownloadSummaryPayload(
   if (summaryResult.cleanedMarkdownBytes != null) payload.cleanedMarkdownBytes = summaryResult.cleanedMarkdownBytes;
   if (summaryResult.titleAiCostUsd !== undefined) payload.titleAiCostUsd = summaryResult.titleAiCostUsd;
   if (summaryResult.cleanupAiCostUsd !== undefined) payload.cleanupAiCostUsd = summaryResult.cleanupAiCostUsd;
+  if (summaryResult.postProcessPaths && Object.keys(summaryResult.postProcessPaths).length > 0) {
+    payload.postProcessPaths = summaryResult.postProcessPaths;
+  }
+  if (summaryResult.postProcessCosts && Object.keys(summaryResult.postProcessCosts).length > 0) {
+    payload.postProcessCosts = summaryResult.postProcessCosts;
+  }
 
   if (extras?.slug !== undefined) payload.slug = extras.slug;
   if (extras?.deckDir !== undefined) payload.deckDir = extras.deckDir;
@@ -224,6 +234,15 @@ export function formatDownloadSummary(
     lines.push(
       `${CLI_ICONS_COLOR.aiCleanupCost} ${pc.bold("AI cleanup (est.):")} ${formatEstimatedUsd(summaryResult.cleanupAiCostUsd)}`
     );
+  }
+  if (summaryResult.postProcessPaths) {
+    for (const [pluginId, outputPath] of Object.entries(summaryResult.postProcessPaths)) {
+      const cost = summaryResult.postProcessCosts?.[pluginId];
+      const costStr = cost !== undefined ? ` · ${formatEstimatedUsd(cost)}` : "";
+      lines.push(
+        `${CLI_ICONS_COLOR.postProcess} ${pc.bold(`${pluginId} (est.):`)} ${linkedPath(outputPath)}${costStr}`
+      );
+    }
   }
 
   const doneLine =

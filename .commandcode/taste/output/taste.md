@@ -1,5 +1,7 @@
 # output
+- Always include a `downloadedAt` ISO 8601 timestamp field in `summary.json` to record when the deck was fetched and saved. Confidence: 0.80
 - In the final CLI output summary, always show AI costs/token usage if an OpenAI model was used (local models show nothing). Confidence: 0.75
+- In the final CLI output summary and in `summary.json`, always include each post-processing step's output file location and estimated AI cost alongside the other artifact paths (PDF, markdown, archive). Confidence: 0.80
 - Save all deck artifacts (PDF, markdown, images) together as a named zip archive. Confidence: 0.75
 - In markdown cleanup prompts, instruct the model to output a detected slide title as `# Title` on the first line of each cleaned slide body; `reassembleMarkdown` should then promote it to `## Slide N: Title` in the assembled output. Confidence: 0.80
 - Apply `normalizeMarkdownSpacing` to full-doc LLM output (which bypasses `reassembleMarkdown`): ensure blank lines before/after headings and collapse 3+ blank lines to 2. Confidence: 0.80

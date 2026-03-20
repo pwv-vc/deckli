@@ -32,6 +32,24 @@ export interface DeckDownloadResult {
 /** Local ONNX models (`350m`, `1.2b`) or any OpenAI chat model id (e.g. `gpt-4o-mini`). */
 export type MarkdownCleanupModelKey = "350m" | "1.2b" | (string & {});
 
+/** A single post-processing plugin: receives cleaned markdown, calls OpenAI, writes one output file. */
+export interface PostProcessPlugin {
+  /** Unique key used as the registry ID and CLI flag name, e.g. `"summary"`. */
+  id: string;
+  /** Display label shown in the spinner, e.g. `"Summarizing deck"`. */
+  label: string;
+  /** Appended to the deck title to form the output filename, e.g. `"summary"` → `{name}.summary.md`. */
+  outputSuffix: string;
+  /** Output file extension. */
+  outputFormat: "md" | "json" | "csv";
+  /** Full system prompt sent to the OpenAI model. */
+  systemPrompt: string;
+  /** Maximum completion tokens for this step. */
+  maxTokens: number;
+  /** Override the model used for this plugin. Defaults to the workflow's configured model (e.g. `"gpt-4o-mini"`). */
+  model?: string;
+}
+
 export interface Config {
   headless: boolean;
   concurrency: number;
@@ -41,6 +59,8 @@ export interface Config {
   markdownContextLimitTokens?: number;
   /** When true, allow full-doc cleanup when within context limit; when false (default), always use slide-by-slide. */
   markdownCleanupFullDoc?: boolean;
+  /** Plugin IDs to run in the post-processing workflow. Defaults to all built-in plugins. */
+  postProcessSteps?: string[];
 }
 
 export interface DownloadOptions {
@@ -63,6 +83,14 @@ export interface DownloadOptions {
   markdown?: boolean;
   /** Model cleanup of OCR markdown. Omitted or `undefined` defaults to `true` (CLI: `--no-cleanup` to disable). */
   cleanup?: boolean;
+  /** Run deck summary post-processing step. Defaults to `true` (CLI: `--no-summary` to disable). */
+  summary?: boolean;
+  /** Run team extraction post-processing step. Defaults to `true` (CLI: `--no-team` to disable). */
+  team?: boolean;
+  /** Run links extraction post-processing step. Defaults to `true` (CLI: `--no-links` to disable). */
+  links?: boolean;
+  /** Run What If statement post-processing step. Defaults to `true` (CLI: `--no-whatif` to disable). */
+  whatif?: boolean;
   force?: boolean;
   /** Explicit source id override (e.g. "docsend"). Auto-detected from URL when omitted. */
   source?: string;

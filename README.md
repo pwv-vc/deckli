@@ -2,7 +2,7 @@
 
 **They shared a link. You wanted the content.**
 
-A TypeScript CLI that downloads presentation decks and extracts searchable text from slides. Default output includes an assembled PDF, OCR markdown with AI cleanup, slide images, and a complete bundle. Currently supports **DocSend** (default); built with a plugin architecture so additional sources (Google Slides, PitchDeck, Brieflink, etc.) can be added without touching the output pipeline. Inspired by [captivus/docsend-dl](https://github.com/captivus/docsend-dl); thanks to that project.
+A TypeScript CLI that downloads presentation decks and extracts searchable text from slides. Default output includes an assembled PDF, OCR markdown with AI cleanup, AI post-processing analysis, slide images, and a complete bundle. Currently supports **DocSend** (default); built with a plugin architecture so additional sources (Google Slides, PitchDeck, Brieflink, etc.) can be added without touching the output pipeline. Inspired by [captivus/docsend-dl](https://github.com/captivus/docsend-dl); thanks to that project.
 
 ## The Problem
 
@@ -16,7 +16,7 @@ DocSend decks are great for sharing presentations, but they're locked in a viewe
 - **Manual work**: Screenshotting slides and transcribing text is slow and error-prone
 - **No bulk access**: Fetching multiple decks or organizing them systematically is difficult
 
-**deckli solves this** by automating the entire workflow: fetching slides, extracting text via OCR, cleaning it with AI models, and organizing everything into a structured bundle. You get both the visual slides (PDF/PNG) and the extracted text (markdown) ready for search, analysis, or AI processing.
+**deckli solves this** by automating the entire workflow: fetching slides, extracting text via OCR, cleaning it with AI models, running post-processing analysis, and organizing everything into a structured bundle. You get both the visual slides (PDF/PNG) and the extracted text (markdown) ready for search, analysis, or AI processing.
 
 ## Quickstart
 
@@ -40,12 +40,13 @@ pnpm dev -- -o ./exports https://docsend.com/view/XXXXXX
 
 - **PDF by default** — slides are assembled into a single PDF at full resolution
 - **Text extraction** — OCR markdown extraction with AI-powered cleanup (default: `gpt-4o-mini`, or local ONNX models)
-- **Complete bundles** — each deck gets its own folder with PDF, markdown, images, `summary.json`, and a zip archive
-- **Smart naming** — detects deck titles from slide content and uses friendly filenames
+- **AI post-processing** — after cleanup, runs a configurable plugin workflow: deck summary, team extraction, link extraction, and a "What if you could…" investor statement; each step writes its own named `.md` file; all steps are on by default and individually opt-out (`--no-summary`, `--no-team`, `--no-links`, `--no-whatif`)
+- **Complete bundles** — each deck gets its own folder with PDF, markdown, post-processing outputs, `summary.json`, and a zip archive
+- **Smart naming** — detects deck titles from slide content and uses friendly filenames; title detection uses OpenAI structured JSON output for reliable parsing
 - **Login support** — handles private and email-gated decks with per-deck session management
 - **Fast parallel downloads** — all slides download concurrently with automatic retries
 - **Works with both** `docsend.com` and `dbx.docsend.com` URLs (including custom subdomains)
-- **Plugin architecture** — new deck sources can be added by implementing a single `DeckSource` interface; the output pipeline is source-agnostic
+- **Plugin architecture** — new deck sources can be added by implementing a single `DeckSource` interface; post-processing steps are individual plugin files under `src/lib/plugins/`; the output pipeline is source-agnostic
 - **Headless by default** — runs in the background; use `--no-headless` to watch the browser
 
 ## Installation
@@ -75,7 +76,7 @@ deckli https://docsend.com/view/XXXXXX
 deckli https://dbx.docsend.com/view/XXXXXX
 ```
 
-Output: everything for a deck goes under **`<parent>/<slug>/`**, where `parent` is the current directory by default (or the directory you pass with **`-o`**) and `slug` is the URL-derived DocSend slug (sanitized for the filesystem). Inside that folder you get **`{name}.pdf`**, OCR/cleaned **markdown**, a **`summary.json`** (paths, sizes, estimated AI costs, etc.), slide PNGs under **`images/`** (by default), and a **`{name}.zip`** containing those artifacts (except when there is nothing to add).
+Output: everything for a deck goes under **`<parent>/<slug>/`**, where `parent` is the current directory by default (or the directory you pass with **`-o`**) and `slug` is the URL-derived DocSend slug (sanitized for the filesystem). Inside that folder you get **`{name}.pdf`**, OCR/cleaned **markdown**, AI post-processing outputs, a **`summary.json`** (paths, sizes, estimated AI costs, download timestamp, etc.), slide PNGs under **`images/`** (by default), and a **`{name}.zip`** containing those artifacts.
 
 **Breaking change (paths):** `-o` is now a **parent directory** (or a path ending in `.pdf`, in which case the parent is `dirname` of that path — the filename is ignored). Files are **not** written as `parent/DeckTitle.pdf` at the top level; they are written as **`parent/<slug>/{name}.pdf`** (and the same folder for markdown, zip, and `summary.json`).
 
@@ -92,16 +93,39 @@ This runs OCR (tesseract.js) on each slide and writes **`{name}.ocr.md`**, then 
 **Opt out:**
 
 - **`--no-markdown`** — PDF (or `--format png`) only; skip OCR and cleaned markdown output.
-- **`--no-cleanup`** — Keep **`{name}.ocr.md`** only; skip cleaned markdown (faster, no API / local model for cleanup).
+- **`--no-cleanup`** — Keep **`{name}.ocr.md`** only; skip cleaned markdown (faster, no API / local model for cleanup). Also skips post-processing since it requires cleaned markdown.
 
-The first `#` heading is updated from the DocSend slug to a **readable deck title** when a friendly filename is detected (e.g. `# RenewablesBridge` instead of `# docsend-…`).
+### AI Post-Processing — on by default
+
+After markdown cleanup, deckli runs a **post-processing workflow** on the cleaned markdown. Each step is an independent plugin that calls OpenAI and writes its own output file:
+
+| Step | Output file | Description |
+|---|---|---|
+| `summary` | `{name}.summary.md` | Executive summary: company, problem, solution, traction, ask |
+| `team` | `{name}.team.md` | Team profiles: founders called out, roles, backgrounds, LinkedIn URLs, emails |
+| `links` | `{name}.links.md` | All URLs categorized by type (LinkedIn, websites, references, social) |
+| `whatif` | `{name}.whatif.md` | A single "What if you could…" investor statement |
+
+All four steps run by default. Disable individual steps:
+
+```bash
+deckli https://docsend.com/view/XXXXXX --no-whatif
+deckli https://docsend.com/view/XXXXXX --no-summary --no-team
+deckli https://docsend.com/view/XXXXXX --no-cleanup   # skips all post-processing too
+```
+
+Post-processing only runs when cleanup produced a cleaned `.md` file. If `OPENAI_API_KEY` is not set, all steps are silently skipped.
+
+The active set of steps can also be restricted via `postProcessSteps` in `~/.deckli/config.json` (see [Config](#config)).
+
+All post-processing output files are included in the **`{name}.zip`** bundle and their paths appear in **`summary.json`** under `postProcessPaths`.
 
 ### Title detection
 
 PDF and markdown filenames are not always the DocSend URL slug. When slides are available, the tool **detects a friendly name** from the first slide:
 
 1. OCR is run on the first slide image.
-2. The same model as `--cleanup` (OpenAI or local Extract) is asked to extract company and/or product name and return a short filename ending with `-deck` (e.g. `AcmeCorp-ProductName-deck`).
+2. The same model as `--cleanup` (OpenAI or local Extract) is asked to extract company and/or product name and return a short filename ending with `-deck` (e.g. `AcmeCorp-ProductName-deck`). OpenAI title detection uses **structured JSON output** (`response_format: json_object`) for reliable parsing without regex fallbacks.
 3. The result is sanitized for filenames (letters, numbers, hyphens only) and used as the base name for the PDF and markdown files (`.ocr.md` for OCR output, `.md` for cleaned text).
 
 If detection fails (no slides, empty OCR, or model error), the DocSend deck slug is used as before.
@@ -117,11 +141,15 @@ These match **`deckli --help`** / **`deckli download --help`** (wording may wrap
 - **`-m, --markdown`** — Write OCR markdown (default: **on**). Pair with **`--no-markdown`** to disable.
 - **`--no-markdown`** — Skip OCR; output PDF and/or image files only.
 - **`--cleanup`** — Run the cleanup model on OCR text (default: **on**). Writes **`{name}.md`**.
-- **`--no-cleanup`** — Keep **`{name}.ocr.md`** only; no cleaned **`.md`**.
+- **`--no-cleanup`** — Keep **`{name}.ocr.md`** only; no cleaned **`.md`**. Also skips all post-processing steps.
+- **`--no-summary`** — Skip the deck summary post-processing step.
+- **`--no-team`** — Skip the team extraction post-processing step.
+- **`--no-links`** — Skip the links extraction post-processing step.
+- **`--no-whatif`** — Skip the "What if you could…" post-processing step.
 - **`--force`** — Re-download slides even if they already exist (**`~/.deckli/cache`** for PDF format, or **`<slug>/images`** for PNG). Without it, cached/on-disk slides are reused when possible.
 - **`--no-headless`** — Show Chromium (useful for login or debugging).
 - **`--json`** — Print the run summary as JSON on **stdout** (no banner). **`summary.json`**, the zip, and other files are still written under **`<parent>/<slug>/`**.
-- **`--debug`** — Verbose messages on **stderr** (URLs, extraction, model/title steps).
+- **`--debug`** — Verbose messages on **stderr** (URLs, extraction, model/title steps, post-processing plugin calls).
 - **`--email <address>`** — For "require email" gates: adds `?email=` to the URL and tries to submit the modal. Inbox verification still needs **`deckli login`** or **`--no-headless`** in many cases.
 
 ### Login (for private or email-gated decks)
@@ -177,17 +205,19 @@ deckli logout                                 # clear all saved logins
 3. Downloads all slide images in parallel with retries.
 4. If slide images are already present (**`<slug>/images/`** for PNG format, or `~/.deckli/cache/<slug>/` for PDF), skips downloading unless **`--force`** is used; then assembles PDF and/or runs markdown/cleanup/rename as requested.
 5. Writes the PDF and (unless **`--no-markdown`**) **`{name}.ocr.md`** into **`<parent>/<slug>/`**.
-6. Detects a friendly name (first-slide text + configured model) and (unless **`--no-cleanup`**) cleans markdown, then renames the PDF and markdown files (`.ocr.md`, `.md`) when the name differs from the slug.
-7. Writes **`summary.json`** (same fields as **`--json`** stdout, plus optional `slug`, `deckDir`, etc.), builds **`{name}.zip`** (PDF/markdown/`summary.json`/bundled **`images/`** when applicable), then prints a **summary** with dim rules and **OSC 8** `file://` links where the terminal supports them.
+6. Detects a friendly name (first-slide text + configured model, using structured JSON output for OpenAI) and (unless **`--no-cleanup`**) cleans markdown, then renames the PDF and markdown files (`.ocr.md`, `.md`) when the name differs from the slug.
+7. Runs the **post-processing workflow** on the cleaned markdown (unless `--no-cleanup` was used): each active plugin calls OpenAI and writes its output file (`{name}.summary.md`, `{name}.team.md`, `{name}.links.md`, `{name}.whatif.md`). Individual steps can be skipped with `--no-summary`, `--no-team`, `--no-links`, `--no-whatif`.
+8. Writes **`summary.json`** (same fields as **`--json`** stdout, plus `slug`, `deckDir`, `downloadedAt`, `postProcessPaths`, etc.), builds **`{name}.zip`** (PDF/markdown/post-processing outputs/`summary.json`/bundled **`images/`** when applicable), then prints a **summary** with dim rules and **OSC 8** `file://` links where the terminal supports them.
 
 ## Config
 
 Config and browser profile are stored in `~/.deckli/`:
 
-- `config.json` — e.g. `headless`, `concurrency`, `maxRetries`, `useStoredLogin`, `markdownCleanupModel`, `markdownContextLimitTokens`, `markdownCleanupFullDoc`. Model choice lives here; **the OpenAI API key does not** — use the **`OPENAI_API_KEY` environment variable** ([below](#openai-api-key-environment-variable)).
-- **`markdownCleanupModel`** — Which model to use for title detection and markdown cleanup. **Default: `"gpt-4o-mini"`** (OpenAI; requires `OPENAI_API_KEY` in the environment). For local ONNX only, use `"350m"` or `"1.2b"`. Any model id starting with `gpt-` uses the OpenAI API. Stored in `config.json`.
+- `config.json` — e.g. `headless`, `concurrency`, `maxRetries`, `useStoredLogin`, `markdownCleanupModel`, `markdownContextLimitTokens`, `markdownCleanupFullDoc`, `postProcessSteps`. Model choice lives here; **the OpenAI API key does not** — use the **`OPENAI_API_KEY` environment variable** ([below](#openai-api-key-environment-variable)).
+- **`markdownCleanupModel`** — Which model to use for title detection, markdown cleanup, and post-processing. **Default: `"gpt-4o-mini"`** (OpenAI; requires `OPENAI_API_KEY` in the environment). For local ONNX only, use `"350m"` or `"1.2b"`. Any model id starting with `gpt-` uses the OpenAI API. Stored in `config.json`.
 - **`markdownContextLimitTokens`** — Model context window in tokens (default 32000). Used when full-doc cleanup is enabled.
 - **`markdownCleanupFullDoc`** — For **local** models (`350m` / `1.2b`) only: when `true`, cleanup may run on the full document in one call when within `markdownContextLimitTokens` (faster but can trigger structured/XML output from Extract models). When `false` (default), cleanup runs slide-by-slide. **OpenAI** models use one full-deck request whenever the deck fits the internal ~120k-token budget, regardless of this flag.
+- **`postProcessSteps`** — Array of plugin IDs to include in the post-processing workflow. Defaults to all built-in plugins: `["summary", "team", "links", "whatif"]`. Use this to permanently restrict which steps run (e.g. `["summary", "whatif"]`). Individual steps can also be disabled per-run with `--no-summary`, `--no-team`, `--no-links`, `--no-whatif`.
 - `profiles/<key>/` — One browser profile per deck (key = slug or `v-SPACE-NAME`). Used when you run `deckli login <url>` for that deck.
 
 ### OpenAI API key (environment variable)
@@ -205,9 +235,9 @@ See also [`.env.example`](.env.example) in the repo.
 
 ### OpenAI (default)
 
-Title detection and `--cleanup` default to **`gpt-4o-mini`** via the [OpenAI API](https://platform.openai.com/docs).
+Title detection, `--cleanup`, and post-processing all default to **`gpt-4o-mini`** via the [OpenAI API](https://platform.openai.com/docs).
 
-If `OPENAI_API_KEY` is missing while an OpenAI model is selected, cleanup and title detection fall back to raw OCR text and the DocSend slug (with a warning).
+If `OPENAI_API_KEY` is missing while an OpenAI model is selected, cleanup, title detection, and post-processing fall back gracefully (raw OCR text, DocSend slug, and no post-processing output files).
 
 With **`--debug`**, each OpenAI call logs to stderr: **latency** (ms), **token usage** from the API (`prompt_tokens`, `completion_tokens`, `total_tokens`), and an **approximate USD cost** (rough rates for common models; not billing-authoritative). Slide-by-slide cleanup also prints a **sum** line after all slides.
 
@@ -216,6 +246,8 @@ OpenAI cleanup uses **one full-deck request** when the estimated prompt + output
 ### Local ONNX / Liquid AI models
 
 Set `markdownCleanupModel` to **`350m`** or **`1.2b`** to use **Liquid AI LFM2 Extract** (ONNX, via [Transformers.js](https://huggingface.co/docs/transformers.js)), from the [Liquid Nanos](https://huggingface.co/collections/LiquidAI/liquid-nanos) collection. These checkpoints are tuned for structured extraction; if you see XML or angle-bracket output, prefer **slide-by-slide** (default: `markdownCleanupFullDoc: false`) and/or **`1.2b`**.
+
+Note: post-processing always uses the OpenAI API regardless of `markdownCleanupModel`, since local ONNX models are not suited for long-form analysis tasks.
 
 | Option | Model (Hugging Face)                    | Notes                  |
 | ------ | --------------------------------------- | ---------------------- |
@@ -230,6 +262,7 @@ Models are downloaded on first use and cached. See [Liquid AI docs](https://docs
 - Requires Chromium installed via `playwright install chromium`.
 - OCR markdown (on by default; use **`--no-markdown`** to skip) can be slow on large decks; text quality depends on slide image clarity.
 - With **local** models (`350m` / `1.2b`), cleanup downloads an ONNX model on first use (hundreds of MB) and runs locally. With **OpenAI** (default), cleanup requires network access and a valid API key. Use **`--no-cleanup`** to skip. Cleanup runs slide-by-slide by default for local models. If local cleanup seems to stall, run with **`--debug`** to see progress.
+- Post-processing requires `OPENAI_API_KEY` regardless of `markdownCleanupModel`; steps are silently skipped when the key is absent.
 
 ## Project Structure
 
@@ -248,6 +281,12 @@ deckli/
 │       │   ├── index.ts         # Source registry: detectSource(), getSourceById(), getSourceIds()
 │       │   ├── base.ts          # Shared Playwright helpers: launchBrowserContext(), tryPassEmailGate(), loginWithBrowser()
 │       │   └── docsend.ts       # DocSend DeckSource implementation (URL parsing, Playwright scraping, page_data API)
+│       ├── plugins/             # Post-processing plugin system (one file per plugin)
+│       │   ├── index.ts         # Registry: imports all plugins, exports BUILT_IN_PLUGINS + DEFAULT_POST_PROCESS_STEPS
+│       │   ├── summary.ts       # summaryPlugin — executive summary (## sections, factual)
+│       │   ├── team.ts          # teamPlugin — all team members; founders/co-founders called out, LinkedIn URLs, emails
+│       │   ├── links.ts         # linksPlugin — categorized URL extraction
+│       │   └── whatif.ts        # whatifPlugin — single "What if you could…" investor sentence
 │       ├── assembler.ts         # PDF assembly from slide PNGs (pdf-lib)
 │       ├── cli-icons.ts         # CLI status symbols and ANSI colors (figures + picocolors)
 │       ├── constants.ts         # Shared constants: USER_AGENT, DEFAULT_CONTEXT_LIMIT_TOKENS
@@ -258,11 +297,12 @@ deckli/
 │       ├── logger.ts            # Unified debug logger (debugLog)
 │       ├── markdown-cleanup.ts  # OCR markdown cleanup: local ONNX models, shared prompts and utilities
 │       ├── ocr-markdown.ts      # Tesseract OCR: slide images → structured markdown
-│       ├── openai-cleanup.ts    # OpenAI-specific cleanup and title detection (re-exports isOpenAiModelKey)
+│       ├── openai-cleanup.ts    # OpenAI-specific cleanup and title detection (structured JSON output for titles)
 │       ├── output.ts            # CLI output formatting: summary table, errors, OSC 8 file links
+│       ├── post-processing.ts   # Post-processing engine: runPostProcessWorkflow(), outputPathForPlugin()
 │       ├── storage.ts           # Config, browser profiles, slide cache dirs, deck paths, cache metadata
 │       ├── stream-utils.ts      # Streaming write buffer and text preview helpers
-│       ├── types.ts             # Shared TypeScript types and interfaces (DeckInfo, DeckSource, DownloadOptions, Config, …)
+│       ├── types.ts             # Shared TypeScript types and interfaces (DeckInfo, DeckSource, PostProcessPlugin, DownloadOptions, Config, …)
 │       └── __fixtures__/        # Static files used by tests
 ├── package.json
 ├── tsconfig.json
@@ -274,14 +314,32 @@ deckli/
 
 ```
 ~/.deckli/
-├── config.json          # User preferences (headless, model, concurrency, …)
+├── config.json          # User preferences (headless, model, concurrency, postProcessSteps, …)
 ├── profiles/<key>/      # Per-deck Chromium browser profiles (from deckli login)
 └── cache/<slug>/        # Cached slide PNGs for PDF format (reused across runs)
 ```
 
+**Example deck output folder:**
+
+```
+./<parent>/<slug>/
+├── {name}.pdf               # Assembled PDF
+├── {name}.ocr.md            # Raw OCR markdown
+├── {name}.md                # AI-cleaned markdown
+├── {name}.summary.md        # Executive summary (post-processing)
+├── {name}.team.md           # Team profiles — founders called out (post-processing)
+├── {name}.links.md          # Extracted URLs (post-processing)
+├── {name}.whatif.md         # "What if you could…" statement (post-processing)
+├── summary.json             # Run metadata (paths, sizes, AI costs, downloadedAt, postProcessPaths)
+├── {name}.zip               # All of the above bundled
+└── images/                  # Slide PNGs (when --bundle-images, default on)
+    ├── slide_01.png
+    └── …
+```
+
 ## Deck Sources & Plugin Architecture
 
-deckli separates **source-specific extraction** from the **shared output pipeline**. Every source implements a single `DeckSource` interface; the rest of the codebase (downloader, PDF assembler, OCR, AI cleanup, ZIP) is source-agnostic and never needs to change when a new source is added.
+deckli separates **source-specific extraction** from the **shared output pipeline**. Every source implements a single `DeckSource` interface; the rest of the codebase (downloader, PDF assembler, OCR, AI cleanup, post-processing, ZIP) is source-agnostic and never needs to change when a new source is added.
 
 ### The `DeckSource` interface
 
@@ -350,10 +408,8 @@ const SOURCES: DeckSource[] = [docsendSource]; // ← register new sources here
 ```typescript
 // src/lib/sources/google.ts
 import type { DeckSource, DeckInfo, ExtractOptions } from "../types.js";
-import { InvalidURLError, ExtractionError } from "../types.js";
+import { InvalidURLError } from "../types.js";
 import { launchBrowserContext } from "./base.js";
-
-const GOOGLE_SLIDES_PATTERN = /^https:\/\/docs\.google\.com\/presentation\/d\//;
 
 export const googleSource: DeckSource = {
   id: "google",
@@ -361,7 +417,7 @@ export const googleSource: DeckSource = {
   exampleUrl: "https://docs.google.com/presentation/d/XXXXXX/pub",
 
   canHandle(url) {
-    return GOOGLE_SLIDES_PATTERN.test(url);
+    return /^https:\/\/docs\.google\.com\/presentation\/d\//.test(url);
   },
 
   parseIdentifier(url) {
@@ -375,13 +431,11 @@ export const googleSource: DeckSource = {
   },
 
   async extractSlideUrls(url, options): Promise<DeckInfo> {
-    // Launch browser, navigate, extract slide image URLs...
     const context = await launchBrowserContext({ headless: options.headless });
     // ... source-specific scraping logic ...
     await context.close();
-
     return {
-      sourceId: "google",   // ← must match this source's id
+      sourceId: "google",
       title: "My Deck",
       slideCount: 10,
       imageUrls: [/* signed image URLs */],
@@ -396,25 +450,210 @@ export const googleSource: DeckSource = {
 
 ```typescript
 import { docsendSource } from "./docsend.js";
-import { googleSource } from "./google.js";   // ← add import
+import { googleSource } from "./google.js";
 
-const SOURCES: DeckSource[] = [
-  docsendSource,
-  googleSource,   // ← add to list
-];
+const SOURCES: DeckSource[] = [docsendSource, googleSource];
 ```
-
-That's it. `detectSource(url)` will now route Google Slides URLs to `googleSource` automatically. The download command, login/logout, caching, PDF assembly, OCR, AI cleanup, and ZIP creation all work without any further changes.
-
-**Cache keys** are automatically namespaced as `<sourceId>-<identifier>` (e.g. `google-abc123xyz`), so caches from different sources never collide.
-
-**Login/logout** work per-deck for any source. If your source needs a custom login flow (e.g. OAuth), implement the optional `login(url, profileDir, options)` method; otherwise the generic Playwright persistent-context flow is used.
 
 ### Currently registered sources
 
 | id | Name | URL pattern | Status |
 |---|---|---|---|
 | `docsend` | DocSend | `*.docsend.com/view/…` | ✅ Implemented (default) |
+
+## Post-Processing Plugin Architecture
+
+After markdown cleanup, deckli runs a **post-processing workflow** — a sequence of plugins that each receive the cleaned markdown, call OpenAI, and write a named output file. The plugin system mirrors the deck source architecture: each plugin is a separate file under `src/lib/plugins/`, and the registry in `src/lib/plugins/index.ts` controls which plugins are available.
+
+### The `PostProcessPlugin` interface
+
+Defined in `src/lib/types.ts`:
+
+```typescript
+interface PostProcessPlugin {
+  id: string;           // unique key used as the CLI flag name and registry key, e.g. "summary"
+  label: string;        // display name shown in the spinner, e.g. "Summarizing deck"
+  outputSuffix: string; // appended to the deck title: "summary" → {name}.summary.md
+  outputFormat: "md" | "json" | "csv"; // file extension; currently all built-ins use "md"
+  systemPrompt: string; // full system prompt sent to the OpenAI model
+  maxTokens: number;    // max completion tokens for this step
+  model?: string;       // optional model override; defaults to the workflow's configured model (e.g. "gpt-4o-mini")
+}
+```
+
+The engine in `src/lib/post-processing.ts` iterates the active plugin IDs, looks each one up in the registry, calls `client.chat.completions.create` with the plugin's `systemPrompt` and the cleaned markdown as the user message, then writes the raw model output to `<deckDir>/<deckTitle>.<outputSuffix>.<outputFormat>`. Each plugin can optionally override the model via its `model` field; otherwise the workflow's configured model (from `markdownCleanupModel` in `~/.deckli/config.json`, default `gpt-4o-mini`) is used.
+
+### Plugin registry
+
+`src/lib/plugins/index.ts` imports all plugin files and exports:
+
+- **`BUILT_IN_PLUGINS`** — `Record<string, PostProcessPlugin>` keyed by plugin ID
+- **`DEFAULT_POST_PROCESS_STEPS`** — ordered array of IDs run when no `postProcessSteps` config is set
+
+The workflow engine looks plugins up by ID from this registry; unknown IDs are skipped with a debug warning.
+
+---
+
+### Built-in plugins
+
+#### `summary` — Executive summary
+
+**File:** `src/lib/plugins/summary.ts`  
+**Output:** `{name}.summary.md`  
+**CLI flag to skip:** `--no-summary`  
+**Max tokens:** 2048
+
+Reads the full cleaned deck markdown and produces a structured executive summary aimed at investors and analysts. The model is instructed to cover:
+
+- What the company does
+- The problem it solves
+- The solution
+- Traction and metrics (if present in the deck)
+- The ask (funding amount, use of funds)
+
+Each section is output as a `##` heading in clean markdown. The summary is factual and concise — no editorializing.
+
+---
+
+#### `team` — Team profiles
+
+**File:** `src/lib/plugins/team.ts`  
+**Output:** `{name}.team.md`  
+**CLI flag to skip:** `--no-team`  
+**Max tokens:** 2048
+
+Extracts every person mentioned in the deck — founders, co-founders, executives, and advisors. The output opens with a **Founders & Co-Founders** section that lists them by name and role so they are immediately visible, followed by a full profile for each person:
+
+- Role/title
+- Founder or co-founder flag (called out explicitly)
+- Key role flag (CEO, CTO, COO, CFO, CPO, CRO, Advisor)
+- Bio and background summary
+- Past companies and experiences
+- LinkedIn URL (if mentioned)
+- Email (if mentioned)
+
+If no people are mentioned in the deck, the file says so.
+
+---
+
+#### `links` — URL extraction
+
+**File:** `src/lib/plugins/links.ts`  
+**Output:** `{name}.links.md`  
+**CLI flag to skip:** `--no-links`  
+**Max tokens:** 1024
+
+Scans the cleaned markdown for every URL and link, then groups them into categories under `##` headings:
+
+- LinkedIn profiles
+- Company websites
+- Reference sources
+- Social media
+- Other
+
+Useful for quickly finding all external references in a deck — investor profiles, product pages, press mentions, data sources, etc. If no links are found, the file says so.
+
+---
+
+#### `whatif` — "What if you could…" investor statement
+
+**File:** `src/lib/plugins/whatif.ts`  
+**Output:** `{name}.whatif.md`  
+**CLI flag to skip:** `--no-whatif`  
+**Max tokens:** 128
+
+Generates a single sharp sentence in the style of **Preston-Werner Ventures (PWV)** that communicates the company's core market opportunity to an investor in plain language. The prompt instructs the model to:
+
+1. Start with **"What if you could…"**
+2. Describe the new capability or freedom unlocked — in plain, non-technical language
+3. Remove a painful, widely felt limitation (time, cost, complexity, intermediaries, uncertainty)
+4. Imply scale without hype — no adjectives, no feature descriptions, no technology mentions
+
+**Canonical style examples the model is given:**
+- *What if you could spin up VMs in 3 milliseconds?*
+- *What if you didn't need a business bank account to accept money online?*
+- *What if you could stay at anyone's place, coordinated over the internet?*
+- *What if you could get a ride anywhere in the city and always know when it will arrive?*
+
+The output is a single sentence only — no explanation, no commentary.
+
+---
+
+### How to add a new post-processing plugin
+
+Adding a plugin requires four small changes. Use the `competitors` plugin as a worked example.
+
+**Step 1 — Create `src/lib/plugins/<name>.ts`**
+
+Export a single `PostProcessPlugin` constant. The `systemPrompt` is the only thing that meaningfully varies between plugins — write it as if you were briefing a senior analyst. Set `model` only if this plugin needs a different model than the default (e.g. a more capable model for complex reasoning, or a cheaper one for simple extraction).
+
+```typescript
+// src/lib/plugins/competitors.ts
+import type { PostProcessPlugin } from "../types.js";
+
+export const competitorsPlugin: PostProcessPlugin = {
+  id: "competitors",
+  label: "Extracting competitors",
+  outputSuffix: "competitors",
+  outputFormat: "md",
+  systemPrompt: `You are a competitive intelligence analyst. Extract all competitors and market alternatives mentioned in the following pitch deck markdown. For each, include: name, how the deck positions against them, claimed advantages, and any URLs mentioned. Output clean markdown with a ## heading per competitor. If no competitors are mentioned, say so.`,
+  maxTokens: 1024,
+  // model: "gpt-4o",  // optional: override the default model for this plugin only
+};
+```
+
+**Step 2 — Register it in `src/lib/plugins/index.ts`**
+
+```typescript
+import { summaryPlugin } from "./summary.js";
+import { teamPlugin } from "./team.js";
+import { linksPlugin } from "./links.js";
+import { whatifPlugin } from "./whatif.js";
+import { competitorsPlugin } from "./competitors.js";  // ← add
+
+export const BUILT_IN_PLUGINS: Record<string, PostProcessPlugin> = {
+  summary: summaryPlugin,
+  team: teamPlugin,
+  links: linksPlugin,
+  whatif: whatifPlugin,
+  competitors: competitorsPlugin,  // ← add
+};
+```
+
+**Step 3 — Add `competitors?: boolean` to `DownloadOptions` in `src/lib/types.ts`**
+
+```typescript
+// in DownloadOptions:
+/** Run competitors extraction post-processing step. Defaults to `true` (CLI: `--no-competitors` to disable). */
+competitors?: boolean;
+```
+
+**Step 4 — Add `--no-competitors` to `src/commands/download.ts`**
+
+In `registerDownloadCommand`, alongside the other `--no-*` flags:
+
+```typescript
+.option("--no-competitors", "Skip competitors extraction post-processing step")
+```
+
+And in `resolvePostProcessSteps`, add `competitors` to the flags map:
+
+```typescript
+const flags: Record<string, boolean | undefined> = {
+  summary: options.summary,
+  team: options.team,
+  links: options.links,
+  whatif: options.whatif,
+  competitors: options.competitors,  // ← add
+};
+```
+
+**That's it.** The new plugin will automatically:
+- Run as part of the default workflow
+- Write `{name}.competitors.md` to the deck folder
+- Be included in `{name}.zip`
+- Appear in `summary.json` under `postProcessPaths.competitors`
+- Be skippable with `--no-competitors` or by omitting `"competitors"` from `postProcessSteps` in `~/.deckli/config.json`
 
 ## Development
 

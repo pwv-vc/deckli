@@ -30,6 +30,7 @@ export async function createDeckArchive(
     summaryJson?: string;
     imagePaths: string[];
     imagePathsInSubfolder: boolean;
+    postProcessPaths?: string[];
   },
   outputDir: string
 ): Promise<string | null> {
@@ -45,6 +46,11 @@ export async function createDeckArchive(
   }
   if (files.summaryJson && existsSync(files.summaryJson)) {
     filesToAdd.push({ path: files.summaryJson, name: basename(files.summaryJson) });
+  }
+  for (const ppPath of files.postProcessPaths ?? []) {
+    if (existsSync(ppPath)) {
+      filesToAdd.push({ path: ppPath, name: basename(ppPath) });
+    }
   }
   for (const imgPath of files.imagePaths) {
     if (existsSync(imgPath)) {
