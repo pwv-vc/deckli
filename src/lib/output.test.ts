@@ -230,6 +230,8 @@ describe("formatDownloadSummary", () => {
     expect(payload.deckDir).toBe("/parent/abc123");
     expect(payload.format).toBe("pdf");
     expect(payload.bundleImages).toBe(true);
+    expect(typeof payload.downloadedAt).toBe("string");
+    expect(new Date(payload.downloadedAt as string).toISOString()).toBe(payload.downloadedAt);
   });
 
   it("includes titleAiCostUsd and cleanupAiCostUsd in JSON when present", () => {

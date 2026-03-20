@@ -137,6 +137,7 @@ export function buildDownloadSummaryPayload(
     totalBytes: result.totalBytes,
     outputPath: summaryOutputPath,
     durationMs: Math.round(elapsedMs),
+    downloadedAt: new Date().toISOString(),
   };
   if (markdownPath != null) payload.markdownPath = markdownPath;
   if (summaryResult.zipPath != null) payload.zipPath = summaryResult.zipPath;

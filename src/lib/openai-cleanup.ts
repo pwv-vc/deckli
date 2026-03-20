@@ -66,7 +66,8 @@ async function chatCompletion(
   model: string,
   system: string,
   user: string,
-  maxTokens: number
+  maxTokens: number,
+  responseFormat?: "json_object"
 ): Promise<ChatCompletionResult> {
   const t0 = performance.now();
   const resp = await client.chat.completions.create({
@@ -77,6 +78,7 @@ async function chatCompletion(
     ],
     temperature: 0,
     max_tokens: maxTokens,
+    ...(responseFormat ? { response_format: { type: responseFormat } } : {}),
   });
   const latencyMs = Math.round(performance.now() - t0);
   const u = resp.usage;
@@ -274,12 +276,19 @@ export async function deriveFriendlyDeckNameWithOpenAi(
   if (!text) return { name: fallback, estimatedCostUsd: null };
 
   try {
-    const { content: raw, metrics } = await chatCompletion(client, modelId, NAME_DECK_SYSTEM_PROMPT, text, 128);
+    const { content: raw, metrics } = await chatCompletion(client, modelId, NAME_DECK_SYSTEM_PROMPT, text, 128, "json_object");
     logOpenAiDebug("title detection", modelId, metrics, debug);
     const est = metrics.estimatedCostUsd ?? null;
-    const fromJson = parseTitleFromJson(raw);
-    const rawTitle = fromJson ?? raw;
-    if (isPromptLeak(rawTitle)) return { name: fallback, estimatedCostUsd: est };
+    let rawTitle: string | null = null;
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (parsed && typeof parsed === "object" && "title" in parsed && typeof (parsed as { title: unknown }).title === "string") {
+        rawTitle = (parsed as { title: string }).title.trim() || null;
+      }
+    } catch {
+      rawTitle = null;
+    }
+    if (!rawTitle || isPromptLeak(rawTitle)) return { name: fallback, estimatedCostUsd: est };
     const friendly = sanitizeFriendlyDeckName(rawTitle);
     if (isPromptLeak(friendly)) return { name: fallback, estimatedCostUsd: est };
     return { name: friendly || fallback, estimatedCostUsd: est };
