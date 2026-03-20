@@ -1,13 +1,15 @@
 # deckli
 
+![deckli](deckli.png)
+
 **They shared a link. You wanted the content.**
 
 A TypeScript CLI that downloads presentation decks and extracts searchable text from slides. Default output includes an assembled PDF, OCR markdown with AI cleanup, AI post-processing analysis, slide images, and a complete bundle. Currently supports **DocSend** (default); built with a plugin architecture so additional sources (Google Slides, PitchDeck, Brieflink, etc.) can be added without touching the output pipeline. Inspired by [captivus/docsend-dl](https://github.com/captivus/docsend-dl); thanks to that project.
 
 ## The Problem
 
-> *Stop screenshotting slides. Get the text, the PDF, the whole thing.*
-> *Decks shouldn't be black boxes. Extract everything.*
+> _Stop screenshotting slides. Get the text, the PDF, the whole thing._
+> _Decks shouldn't be black boxes. Extract everything._
 
 DocSend decks are great for sharing presentations, but they're locked in a viewer. Getting the actual content — especially the text — is tedious:
 
@@ -99,14 +101,14 @@ This runs OCR (tesseract.js) on each slide and writes **`{name}.ocr.md`**, then 
 
 After markdown cleanup, deckli runs a **post-processing workflow** on the cleaned markdown. Each step is an independent plugin that calls OpenAI and writes its own output file:
 
-| Step | Output file | Description |
-|---|---|---|
-| `summary` | `{name}.summary.md` | Executive summary: company, problem, solution, traction, ask |
-| `team` | `{name}.team.md` | Team profiles: founders called out, roles, backgrounds, LinkedIn URLs, emails |
-| `links` | `{name}.links.md` | All URLs categorized by type (LinkedIn, websites, references, social) |
-| `whatif` | `{name}.whatif.md` | A single "What if you could…" investor statement |
-| `favicon` | `{name}.favicon.{ico\|png\|svg}` | Company favicon fetched from the website URL found in the deck |
-| `screenshot` | `{name}.screenshot.png` | Full-page screenshot of the company's main website |
+| Step         | Output file                      | Description                                                                   |
+| ------------ | -------------------------------- | ----------------------------------------------------------------------------- |
+| `summary`    | `{name}.summary.md`              | Executive summary: company, problem, solution, traction, ask                  |
+| `team`       | `{name}.team.md`                 | Team profiles: founders called out, roles, backgrounds, LinkedIn URLs, emails |
+| `links`      | `{name}.links.md`                | All URLs categorized by type (LinkedIn, websites, references, social)         |
+| `whatif`     | `{name}.whatif.md`               | A single "What if you could…" investor statement                              |
+| `favicon`    | `{name}.favicon.{ico\|png\|svg}` | Company favicon fetched from the website URL found in the deck                |
+| `screenshot` | `{name}.screenshot.png`          | Full-page screenshot of the company's main website                            |
 
 All six steps run by default. Disable individual steps:
 
@@ -357,8 +359,8 @@ Defined in `src/lib/types.ts`:
 
 ```typescript
 interface DeckSource {
-  readonly id: string;        // unique key, e.g. "docsend", "google", "pitchdeck"
-  readonly name: string;      // human-readable, e.g. "DocSend", "Google Slides"
+  readonly id: string; // unique key, e.g. "docsend", "google", "pitchdeck"
+  readonly name: string; // human-readable, e.g. "DocSend", "Google Slides"
   readonly exampleUrl: string; // shown in help text
 
   /** Return true if this source can handle the given URL. */
@@ -388,7 +390,11 @@ interface DeckSource {
    * Optional: override the login flow for this source.
    * When absent, the generic Playwright persistent-context login is used.
    */
-  login?(url: string, profileDir: string, options: { headless?: boolean }): Promise<void>;
+  login?(
+    url: string,
+    profileDir: string,
+    options: { headless?: boolean },
+  ): Promise<void>;
 }
 ```
 
@@ -405,10 +411,10 @@ const SOURCES: DeckSource[] = [docsendSource]; // ← register new sources here
 
 `src/lib/sources/base.ts` exports utilities all sources can use:
 
-| Export | Purpose |
-|---|---|
-| `launchBrowserContext(options)` | Launch a Playwright context, optionally with a persistent profile directory |
-| `tryPassEmailGate(page, email, debug)` | Fill an email input and click Continue; returns true when the carousel appears |
+| Export                                       | Purpose                                                                        |
+| -------------------------------------------- | ------------------------------------------------------------------------------ |
+| `launchBrowserContext(options)`              | Launch a Playwright context, optionally with a persistent profile directory    |
+| `tryPassEmailGate(page, email, debug)`       | Fill an email input and click Continue; returns true when the carousel appears |
 | `loginWithBrowser(url, profileDir, options)` | Generic persistent-context login: open browser, navigate, wait for user, close |
 
 ### How to add a new source
@@ -448,7 +454,9 @@ export const googleSource: DeckSource = {
       sourceId: "google",
       title: "My Deck",
       slideCount: 10,
-      imageUrls: [/* signed image URLs */],
+      imageUrls: [
+        /* signed image URLs */
+      ],
       warnings: [],
       slug: this.parseIdentifier(url),
     };
@@ -467,8 +475,8 @@ const SOURCES: DeckSource[] = [docsendSource, googleSource];
 
 ### Currently registered sources
 
-| id | Name | URL pattern | Status |
-|---|---|---|---|
+| id        | Name    | URL pattern            | Status                   |
+| --------- | ------- | ---------------------- | ------------------------ |
 | `docsend` | DocSend | `*.docsend.com/view/…` | ✅ Implemented (default) |
 
 ## Post-Processing Plugin Architecture
@@ -483,13 +491,13 @@ Two plugin interfaces are defined in `src/lib/types.ts`:
 
 ```typescript
 interface PostProcessPlugin {
-  id: string;           // unique key used as the CLI flag name and registry key, e.g. "summary"
-  label: string;        // display name shown in the spinner, e.g. "Summarizing deck"
+  id: string; // unique key used as the CLI flag name and registry key, e.g. "summary"
+  label: string; // display name shown in the spinner, e.g. "Summarizing deck"
   outputSuffix: string; // appended to the deck title: "summary" → {name}.summary.md
   outputFormat: "md" | "json" | "csv"; // file extension; currently all built-ins use "md"
   systemPrompt: string; // full system prompt sent to the OpenAI model
-  maxTokens: number;    // max completion tokens for this step
-  model?: string;       // optional model override; defaults to the workflow's configured model (e.g. "gpt-4o-mini")
+  maxTokens: number; // max completion tokens for this step
+  model?: string; // optional model override; defaults to the workflow's configured model (e.g. "gpt-4o-mini")
 }
 ```
 
@@ -497,14 +505,14 @@ interface PostProcessPlugin {
 
 ```typescript
 interface ActionPlugin {
-  id: string;           // unique key used as the CLI flag name and registry key, e.g. "favicon"
-  label: string;        // display name shown in the spinner, e.g. "Fetching favicon"
+  id: string; // unique key used as the CLI flag name and registry key, e.g. "favicon"
+  label: string; // display name shown in the spinner, e.g. "Fetching favicon"
   outputSuffix: string; // base suffix for the output filename, e.g. "favicon"
   run(
-    markdown: string,   // the full cleaned deck markdown
-    outputDir: string,  // deck output directory to write files into
-    title: string,      // deck title (used for output filenames)
-    options: ActionPluginRunOptions
+    markdown: string, // the full cleaned deck markdown
+    outputDir: string, // deck output directory to write files into
+    title: string, // deck title (used for output filenames)
+    options: ActionPluginRunOptions,
   ): Promise<PostProcessResult>;
 }
 ```
@@ -598,10 +606,11 @@ Generates a single sharp sentence in the style of **Preston-Werner Ventures (PWV
 4. Imply scale without hype — no adjectives, no feature descriptions, no technology mentions
 
 **Canonical style examples the model is given:**
-- *What if you could spin up VMs in 3 milliseconds?*
-- *What if you didn't need a business bank account to accept money online?*
-- *What if you could stay at anyone's place, coordinated over the internet?*
-- *What if you could get a ride anywhere in the city and always know when it will arrive?*
+
+- _What if you could spin up VMs in 3 milliseconds?_
+- _What if you didn't need a business bank account to accept money online?_
+- _What if you could stay at anyone's place, coordinated over the internet?_
+- _What if you could get a ride anywhere in the city and always know when it will arrive?_
 
 The output is a single sentence only — no explanation, no commentary.
 
@@ -663,7 +672,11 @@ For an **action plugin** (HTTP, browser, or other async work), export an `Action
 
 ```typescript
 // src/lib/plugins/my-action.ts
-import type { ActionPlugin, ActionPluginRunOptions, PostProcessResult } from "../types.js";
+import type {
+  ActionPlugin,
+  ActionPluginRunOptions,
+  PostProcessResult,
+} from "../types.js";
 import { join } from "path";
 
 export const myActionPlugin: ActionPlugin = {
@@ -673,7 +686,12 @@ export const myActionPlugin: ActionPlugin = {
   async run(markdown, outputDir, title, options): Promise<PostProcessResult> {
     const outputPath = join(outputDir, `${title}.my-action.txt`);
     // ... do async work, write outputPath ...
-    return { pluginId: "my-action", outputPath, success: true, estimatedCostUsd: null };
+    return {
+      pluginId: "my-action",
+      outputPath,
+      success: true,
+      estimatedCostUsd: null,
+    };
   },
 };
 ```
@@ -687,16 +705,19 @@ import { linksPlugin } from "./links.js";
 import { whatifPlugin } from "./whatif.js";
 import { faviconPlugin } from "./favicon.js";
 import { screenshotPlugin } from "./screenshot.js";
-import { competitorsPlugin } from "./competitors.js";  // ← add
+import { competitorsPlugin } from "./competitors.js"; // ← add
 
-export const BUILT_IN_PLUGINS: Record<string, PostProcessPlugin | ActionPlugin> = {
+export const BUILT_IN_PLUGINS: Record<
+  string,
+  PostProcessPlugin | ActionPlugin
+> = {
   summary: summaryPlugin,
   team: teamPlugin,
   links: linksPlugin,
   whatif: whatifPlugin,
   favicon: faviconPlugin,
   screenshot: screenshotPlugin,
-  competitors: competitorsPlugin,  // ← add
+  competitors: competitorsPlugin, // ← add
 };
 ```
 
@@ -724,11 +745,12 @@ const flags: Record<string, boolean | undefined> = {
   team: options.team,
   links: options.links,
   whatif: options.whatif,
-  competitors: options.competitors,  // ← add
+  competitors: options.competitors, // ← add
 };
 ```
 
 **That's it.** The new plugin will automatically:
+
 - Run as part of the default workflow
 - Write `{name}.competitors.md` to the deck folder
 - Be included in `{name}.zip`
