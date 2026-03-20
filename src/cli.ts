@@ -23,7 +23,7 @@ const program = new Command();
 program
   .name("deckli")
   .description(
-    "Download DocSend decks into <parent>/<slug>/: PDF or PNG slides, OCR markdown, summary.json, and a zip (see README)"
+    "Download decks into <parent>/<slug>/: PDF or PNG slides, OCR markdown, summary.json, and a zip (see README)"
   )
   .version(version, "-v, --version", "Output only the version number")
   .helpOption("-h, --help", "Show help")
@@ -57,8 +57,9 @@ program
     "--email <address>",
     "Email for require-email gates: add ?email= to the URL and auto-click Continue when the modal appears"
   )
-  .argument("[url]", "DocSend deck URL (e.g. https://docsend.com/view/XXXXXX)")
-  .action(async (url: string | undefined, opts: { output?: string; format?: string; images?: boolean; bundleImages?: boolean; headless?: boolean; json?: boolean; debug?: boolean; markdown?: boolean; cleanup?: boolean; force?: boolean; email?: string }) => {
+  .addOption(new Option("--source <id>", "Deck source id (auto-detected from URL)").hideHelp())
+  .argument("[url]", "Deck URL (e.g. https://docsend.com/view/XXXXXX)")
+  .action(async (url: string | undefined, opts: { output?: string; format?: string; images?: boolean; bundleImages?: boolean; headless?: boolean; json?: boolean; debug?: boolean; markdown?: boolean; cleanup?: boolean; force?: boolean; email?: string; source?: string }) => {
     if (url?.trim()) {
       const json = opts.json ?? false;
       if (!json) showBanner();
@@ -78,6 +79,7 @@ program
           cleanup: opts.cleanup,
           force: opts.force,
           email: opts.email,
+          source: opts.source,
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);

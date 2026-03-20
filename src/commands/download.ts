@@ -10,7 +10,7 @@ import { join, dirname } from "path";
 import ora from "ora";
 import type { Ora } from "ora";
 import { Command, Option } from "commander";
-import { extractSlideUrls } from "../lib/extractor.js";
+import { detectSource, getSourceById } from "../lib/sources/index.js";
 import { downloadSlides } from "../lib/downloader.js";
 import { assemblePdf } from "../lib/assembler.js";
 import { applyFriendlyDeckHeading, ocrImagesToMarkdown, ocrSingleImage } from "../lib/ocr-markdown.js";
@@ -40,7 +40,6 @@ import {
   isOcrMarkdownFile,
   isMainMarkdownFile,
 } from "../lib/storage.js";
-import { getProfileKeyFromUrl, parseDocSendUrl } from "../lib/extractor.js";
 import { copySlidesToBundleImages, createDeckArchive } from "../lib/deck-output.js";
 import { listSlideFiles, totalSlideBytesInDir, dirHasAllSlides } from "../lib/fs-utils.js";
 import { createStreamWriteBuffer, lastCharsPreview } from "../lib/stream-utils.js";
@@ -161,10 +160,15 @@ export async function runDownload(url: string, options: DownloadOptions = {}): P
   const cwd = process.cwd();
   const config = loadConfig();
   const headless = options.headless ?? config.headless;
+
+  const source = options.source
+    ? (getSourceById(options.source) ?? detectSource(url.trim()))
+    : detectSource(url.trim());
+
   let profileKey: string | null = null;
   if (config.useStoredLogin) {
     try {
-      profileKey = getProfileKeyFromUrl(url.trim());
+      profileKey = source.getProfileKey(url.trim());
     } catch {
       profileKey = null;
     }
@@ -187,29 +191,31 @@ export async function runDownload(url: string, options: DownloadOptions = {}): P
 
   if (!isPngFormat) {
     try {
-      const urlSlug = parseDocSendUrl(url.trim());
-      if (urlSlug) {
-        const dir = getSlideCacheDir("docsend-" + urlSlug);
+      const identifier = source.parseIdentifier(url.trim());
+      if (identifier) {
+        const cacheKey = `${source.id}-${identifier}`;
+        const dir = getSlideCacheDir(cacheKey);
         const meta = readCacheMetadata(dir);
         if (meta && dirHasAllSlides(dir, meta.slideCount) && !options.force) {
           useCachedOnly = true;
           deckInfo = {
+            sourceId: source.id,
             title: meta.title,
             slideCount: meta.slideCount,
             imageUrls: [],
             warnings: [],
-            slug: urlSlug,
+            slug: identifier,
           };
           cacheDirFromUrl = dir;
         }
       }
     } catch {
-      // invalid URL or no slug; continue with browser
+      // invalid URL or no identifier; continue with browser
     }
   }
 
   if (!useCachedOnly) {
-    deckInfo = await extractSlideUrls(url.trim(), {
+    deckInfo = await source.extractSlideUrls(url.trim(), {
       headless,
       profileKey,
       gateEmail: options.email?.trim() || undefined,
@@ -441,7 +447,7 @@ async function runPdfDownload(
 ): Promise<void> {
   const cacheDir = useCachedOnly
     ? cacheDirFromUrl!
-    : getSlideCacheDir(deckInfo.slug ? "docsend-" + deckInfo.slug : deckInfo.title);
+    : getSlideCacheDir(deckInfo.slug ? `${deckInfo.sourceId}-${deckInfo.slug}` : deckInfo.title);
 
   let dlResult: DownloadResult;
   if (useCachedOnly) {

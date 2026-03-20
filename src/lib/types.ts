@@ -1,4 +1,6 @@
 export interface DeckInfo {
+  /** Source that produced this deck info, e.g. "docsend", "google", "pitchdeck" */
+  sourceId: string;
   title: string;
   slideCount: number;
   imageUrls: (string | null)[];
@@ -62,6 +64,8 @@ export interface DownloadOptions {
   /** Model cleanup of OCR markdown. Omitted or `undefined` defaults to `true` (CLI: `--no-cleanup` to disable). */
   cleanup?: boolean;
   force?: boolean;
+  /** Explicit source id override (e.g. "docsend"). Auto-detected from URL when omitted. */
+  source?: string;
 }
 
 export const DEFAULT_CONFIG: Config = {
@@ -74,7 +78,73 @@ export const DEFAULT_CONFIG: Config = {
   markdownCleanupFullDoc: false,
 };
 
-export class DocSendError extends Error {
+/** Options passed to DeckSource.extractSlideUrls */
+export interface ExtractOptions {
+  headless: boolean;
+  /** If set, use this profile key's saved login (per-deck). Ignored if that profile does not exist. */
+  profileKey: string | null;
+  /**
+   * For "require email" decks: added to the URL as `?email=` and used to fill/submit the Continue modal if slides do not load immediately.
+   */
+  gateEmail?: string;
+  /** When true, log debug info to stderr (page URL, evaluate result, etc.). */
+  debug?: boolean;
+  onStatus?: (message: string) => void;
+}
+
+/**
+ * Plugin interface for a deck source (e.g. DocSend, Google Slides, PitchDeck, Brieflink).
+ * Each source implements URL detection, identifier parsing, and slide extraction.
+ * The shared output pipeline (PDF, OCR, AI cleanup, ZIP) is source-agnostic.
+ */
+export interface DeckSource {
+  /** Unique identifier, e.g. "docsend", "google", "pitchdeck", "brieflink" */
+  readonly id: string;
+  /** Human-readable name, e.g. "DocSend", "Google Slides" */
+  readonly name: string;
+  /** Example URL shown in help text */
+  readonly exampleUrl: string;
+
+  /** Returns true if this source can handle the given URL */
+  canHandle(url: string): boolean;
+
+  /**
+   * Parses a URL-derived identifier used for cache keys.
+   * Returns null if no identifier can be extracted (e.g. space/name URLs).
+   * Throws InvalidURLError if URL is invalid for this source.
+   */
+  parseIdentifier(url: string): string | null;
+
+  /**
+   * Returns a profile key for per-deck login storage.
+   * Throws InvalidURLError if URL is invalid.
+   */
+  getProfileKey(url: string): string;
+
+  /**
+   * Core extraction: launches browser, navigates to URL, returns DeckInfo with slide image URLs.
+   * The returned DeckInfo must have sourceId set to this source's id.
+   */
+  extractSlideUrls(url: string, options: ExtractOptions): Promise<DeckInfo>;
+
+  /**
+   * Optional: source-specific login flow.
+   * If absent, the generic Playwright persistent-context login in sources/base.ts is used.
+   */
+  login?(url: string, profileDir: string, options: { headless?: boolean; debug?: boolean }): Promise<void>;
+}
+
+/** Generic base error for all deck source errors. */
+export class DeckSourceError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "DeckSourceError";
+    Object.setPrototypeOf(this, DeckSourceError.prototype);
+  }
+}
+
+/** @deprecated Use DeckSourceError. Kept for backward compatibility. */
+export class DocSendError extends DeckSourceError {
   constructor(message: string) {
     super(message);
     this.name = "DocSendError";
@@ -82,23 +152,26 @@ export class DocSendError extends Error {
   }
 }
 
-export class InvalidURLError extends DocSendError {
+export class InvalidURLError extends DeckSourceError {
   constructor(message: string) {
     super(message);
     this.name = "InvalidURLError";
+    Object.setPrototypeOf(this, InvalidURLError.prototype);
   }
 }
 
-export class EmailGateError extends DocSendError {
+export class EmailGateError extends DeckSourceError {
   constructor(message: string) {
     super(message);
     this.name = "EmailGateError";
+    Object.setPrototypeOf(this, EmailGateError.prototype);
   }
 }
 
-export class ExtractionError extends DocSendError {
+export class ExtractionError extends DeckSourceError {
   constructor(message: string) {
     super(message);
     this.name = "ExtractionError";
+    Object.setPrototypeOf(this, ExtractionError.prototype);
   }
 }

@@ -1,8 +1,8 @@
 # deckli
 
-**Extract and download DocSend decks with full text extraction — PDF, OCR markdown, and AI-powered cleanup in one command.**
+**Download presentation decks with full text extraction — PDF, OCR markdown, and AI-powered cleanup in one command.**
 
-A TypeScript CLI that downloads any public (or logged-in) DocSend deck and extracts searchable text from slides. Default output includes an assembled PDF, OCR markdown with AI cleanup, slide images, and a complete bundle. Inspired by [captivus/docsend-dl](https://github.com/captivus/docsend-dl); thanks to that project.
+A TypeScript CLI that downloads presentation decks and extracts searchable text from slides. Default output includes an assembled PDF, OCR markdown with AI cleanup, slide images, and a complete bundle. Currently supports **DocSend** (default); built with a plugin architecture so additional sources (Google Slides, PitchDeck, Brieflink, etc.) can be added without touching the output pipeline. Inspired by [captivus/docsend-dl](https://github.com/captivus/docsend-dl); thanks to that project.
 
 ## The Problem
 
@@ -41,7 +41,8 @@ pnpm dev -- -o ./exports https://docsend.com/view/XXXXXX
 - **Smart naming** — detects deck titles from slide content and uses friendly filenames
 - **Login support** — handles private and email-gated decks with per-deck session management
 - **Fast parallel downloads** — all slides download concurrently with automatic retries
-- **Works with both** `docsend.com` and `dbx.docsend.com` URLs
+- **Works with both** `docsend.com` and `dbx.docsend.com` URLs (including custom subdomains)
+- **Plugin architecture** — new deck sources can be added by implementing a single `DeckSource` interface; the output pipeline is source-agnostic
 - **Headless by default** — runs in the background; use `--no-headless` to watch the browser
 
 ## Installation
@@ -168,8 +169,8 @@ deckli logout                                 # clear all saved logins
 
 ## How It Works
 
-1. Opens the DocSend page in Chromium (Playwright), using that deck's saved login if you ran `deckli login <url>` for it.
-2. Extracts each slide's image URL from the page's `page_data` endpoints.
+1. Detects the deck source from the URL (currently DocSend), opens the page in Chromium (Playwright), using that deck's saved login if you ran `deckli login <url>` for it.
+2. The source extracts each slide's image URL (DocSend: via the page's `page_data` endpoints).
 3. Downloads all slide images in parallel with retries.
 4. If slide images are already present (**`<slug>/images/`** for PNG format, or `~/.deckli/cache/<slug>/` for PDF), skips downloading unless **`--force`** is used; then assembles PDF and/or runs markdown/cleanup/rename as requested.
 5. Writes the PDF and (unless **`--no-markdown`**) **`{name}.ocr.md`** into **`<parent>/<slug>/`**.
@@ -240,12 +241,16 @@ deckli/
 │   │   ├── login.ts             # `deckli login` — open browser and save session per deck
 │   │   └── logout.ts            # `deckli logout` — clear saved sessions
 │   └── lib/                     # Shared library modules (no CLI concerns)
+│       ├── sources/             # Deck source plugin system
+│       │   ├── index.ts         # Source registry: detectSource(), getSourceById(), getSourceIds()
+│       │   ├── base.ts          # Shared Playwright helpers: launchBrowserContext(), tryPassEmailGate(), loginWithBrowser()
+│       │   └── docsend.ts       # DocSend DeckSource implementation (URL parsing, Playwright scraping, page_data API)
 │       ├── assembler.ts         # PDF assembly from slide PNGs (pdf-lib)
 │       ├── cli-icons.ts         # CLI status symbols and ANSI colors (figures + picocolors)
 │       ├── constants.ts         # Shared constants: USER_AGENT, DEFAULT_CONTEXT_LIMIT_TOKENS
 │       ├── deck-output.ts       # Slide bundling into images/ and ZIP archive creation
 │       ├── downloader.ts        # Parallel slide image downloader with retries
-│       ├── extractor.ts         # DocSend page extraction via Playwright (slide URLs, deck info)
+│       ├── extractor.ts         # Backward-compat shim re-exporting from sources/docsend.ts
 │       ├── fs-utils.ts          # Filesystem helpers: listSlideFiles, dirHasAllSlides, totalSlideBytesInDir
 │       ├── logger.ts            # Unified debug logger (debugLog)
 │       ├── markdown-cleanup.ts  # OCR markdown cleanup: local ONNX models, shared prompts and utilities
@@ -254,7 +259,7 @@ deckli/
 │       ├── output.ts            # CLI output formatting: summary table, errors, OSC 8 file links
 │       ├── storage.ts           # Config, browser profiles, slide cache dirs, deck paths, cache metadata
 │       ├── stream-utils.ts      # Streaming write buffer and text preview helpers
-│       ├── types.ts             # Shared TypeScript types and interfaces (DeckInfo, DownloadOptions, Config, …)
+│       ├── types.ts             # Shared TypeScript types and interfaces (DeckInfo, DeckSource, DownloadOptions, Config, …)
 │       └── __fixtures__/        # Static files used by tests
 ├── package.json
 ├── tsconfig.json
@@ -270,6 +275,143 @@ deckli/
 ├── profiles/<key>/      # Per-deck Chromium browser profiles (from deckli login)
 └── cache/<slug>/        # Cached slide PNGs for PDF format (reused across runs)
 ```
+
+## Deck Sources & Plugin Architecture
+
+deckli separates **source-specific extraction** from the **shared output pipeline**. Every source implements a single `DeckSource` interface; the rest of the codebase (downloader, PDF assembler, OCR, AI cleanup, ZIP) is source-agnostic and never needs to change when a new source is added.
+
+### The `DeckSource` interface
+
+Defined in `src/lib/types.ts`:
+
+```typescript
+interface DeckSource {
+  readonly id: string;        // unique key, e.g. "docsend", "google", "pitchdeck"
+  readonly name: string;      // human-readable, e.g. "DocSend", "Google Slides"
+  readonly exampleUrl: string; // shown in help text
+
+  /** Return true if this source can handle the given URL. */
+  canHandle(url: string): boolean;
+
+  /**
+   * Parse a URL-derived identifier used as the cache key fragment.
+   * Return null when no identifier can be extracted (e.g. space/name URLs).
+   * Throw InvalidURLError for URLs that are structurally invalid for this source.
+   */
+  parseIdentifier(url: string): string | null;
+
+  /**
+   * Return a profile key for per-deck login storage.
+   * Throw InvalidURLError for invalid URLs.
+   */
+  getProfileKey(url: string): string;
+
+  /**
+   * Core extraction: launch browser, navigate to URL, return DeckInfo.
+   * The returned DeckInfo must set sourceId to this source's id.
+   * Shared Playwright helpers are available in src/lib/sources/base.ts.
+   */
+  extractSlideUrls(url: string, options: ExtractOptions): Promise<DeckInfo>;
+
+  /**
+   * Optional: override the login flow for this source.
+   * When absent, the generic Playwright persistent-context login is used.
+   */
+  login?(url: string, profileDir: string, options: { headless?: boolean }): Promise<void>;
+}
+```
+
+### Source registry
+
+`src/lib/sources/index.ts` holds the ordered list of registered sources. URL detection iterates the list and calls `canHandle(url)` on each; the first match wins. If no source matches, the default (DocSend) is returned, which will throw `InvalidURLError` for truly invalid input.
+
+```typescript
+// src/lib/sources/index.ts
+const SOURCES: DeckSource[] = [docsendSource]; // ← register new sources here
+```
+
+### Shared Playwright helpers
+
+`src/lib/sources/base.ts` exports utilities all sources can use:
+
+| Export | Purpose |
+|---|---|
+| `launchBrowserContext(options)` | Launch a Playwright context, optionally with a persistent profile directory |
+| `tryPassEmailGate(page, email, debug)` | Fill an email input and click Continue; returns true when the carousel appears |
+| `loginWithBrowser(url, profileDir, options)` | Generic persistent-context login: open browser, navigate, wait for user, close |
+
+### How to add a new source
+
+**1. Create `src/lib/sources/<name>.ts`** and export a `DeckSource` object:
+
+```typescript
+// src/lib/sources/google.ts
+import type { DeckSource, DeckInfo, ExtractOptions } from "../types.js";
+import { InvalidURLError, ExtractionError } from "../types.js";
+import { launchBrowserContext } from "./base.js";
+
+const GOOGLE_SLIDES_PATTERN = /^https:\/\/docs\.google\.com\/presentation\/d\//;
+
+export const googleSource: DeckSource = {
+  id: "google",
+  name: "Google Slides",
+  exampleUrl: "https://docs.google.com/presentation/d/XXXXXX/pub",
+
+  canHandle(url) {
+    return GOOGLE_SLIDES_PATTERN.test(url);
+  },
+
+  parseIdentifier(url) {
+    const m = url.match(/\/presentation\/d\/([a-zA-Z0-9_-]+)/);
+    if (!m) throw new InvalidURLError(`Invalid Google Slides URL: ${url}`);
+    return m[1];
+  },
+
+  getProfileKey(url) {
+    return this.parseIdentifier(url) ?? url;
+  },
+
+  async extractSlideUrls(url, options): Promise<DeckInfo> {
+    // Launch browser, navigate, extract slide image URLs...
+    const context = await launchBrowserContext({ headless: options.headless });
+    // ... source-specific scraping logic ...
+    await context.close();
+
+    return {
+      sourceId: "google",   // ← must match this source's id
+      title: "My Deck",
+      slideCount: 10,
+      imageUrls: [/* signed image URLs */],
+      warnings: [],
+      slug: this.parseIdentifier(url),
+    };
+  },
+};
+```
+
+**2. Register it in `src/lib/sources/index.ts`:**
+
+```typescript
+import { docsendSource } from "./docsend.js";
+import { googleSource } from "./google.js";   // ← add import
+
+const SOURCES: DeckSource[] = [
+  docsendSource,
+  googleSource,   // ← add to list
+];
+```
+
+That's it. `detectSource(url)` will now route Google Slides URLs to `googleSource` automatically. The download command, login/logout, caching, PDF assembly, OCR, AI cleanup, and ZIP creation all work without any further changes.
+
+**Cache keys** are automatically namespaced as `<sourceId>-<identifier>` (e.g. `google-abc123xyz`), so caches from different sources never collide.
+
+**Login/logout** work per-deck for any source. If your source needs a custom login flow (e.g. OAuth), implement the optional `login(url, profileDir, options)` method; otherwise the generic Playwright persistent-context flow is used.
+
+### Currently registered sources
+
+| id | Name | URL pattern | Status |
+|---|---|---|---|
+| `docsend` | DocSend | `*.docsend.com/view/…` | ✅ Implemented (default) |
 
 ## Development
 

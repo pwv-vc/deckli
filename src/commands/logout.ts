@@ -1,7 +1,7 @@
 import pc from "picocolors";
 import type { Command } from "commander";
 import { clearBrowserProfile, hasBrowserProfile, listProfileKeys } from "../lib/storage.js";
-import { getProfileKeyFromUrl } from "../lib/extractor.js";
+import { detectSource } from "../lib/sources/index.js";
 import { formatError } from "../lib/output.js";
 
 export function registerLogoutCommand(program: Command): void {
@@ -15,7 +15,7 @@ export function registerLogoutCommand(program: Command): void {
       const json = options.json ?? false;
       if (url?.trim()) {
         try {
-          const profileKey = getProfileKeyFromUrl(url.trim());
+          const profileKey = detectSource(url.trim()).getProfileKey(url.trim());
           if (!hasBrowserProfile(profileKey)) {
             const msg = `No saved login for this deck (${profileKey}).`;
             console.log(json ? JSON.stringify({ success: true, message: msg }, null, 2) : pc.gray(msg));

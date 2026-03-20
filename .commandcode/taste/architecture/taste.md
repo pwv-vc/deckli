@@ -1,4 +1,6 @@
 # architecture
+- Design deck source support as a plugin-style architecture: each source (docsend, google, pitchdeck, brieflink, etc.) implements its own download and extract functions behind a shared interface, with docsend as the default source. Confidence: 0.85
+- Regardless of deck source, always produce the same standardized output artifacts: PDF, images, raw markdown, AI-cleaned markdown, and a named zip archive. Confidence: 0.85
 - Extract shared constants (e.g. USER_AGENT, token limits) into a dedicated `src/lib/constants.ts` instead of duplicating them across modules. Confidence: 0.85
 - Extract repeated inline utility patterns (e.g. file listing filters) into a dedicated `src/lib/fs-utils.ts`. Confidence: 0.80
 - Centralize debug logging into a single `src/lib/logger.ts` utility rather than using inconsistent inline patterns across modules. Confidence: 0.80
@@ -7,3 +9,6 @@
 - Avoid circular dependencies between lib modules by extracting shared primitives (prompts, utilities) into a neutral module (e.g. `src/lib/markdown-utils.ts`). Confidence: 0.75
 - Use `afterEach` for test directory cleanup instead of per-test cleanup, so teardown runs even when a test throws. Confidence: 0.80
 - Keep all lib utilities in `src/lib/`; avoid single-file subdirectories like `src/config/` — consolidate into `src/lib/` instead. Confidence: 0.80
+- Group multiple related source implementations under `src/lib/sources/` (index.ts registry, base.ts shared helpers, one file per source); use `detectSource(url)` in commands instead of hardcoded source-specific imports. Confidence: 0.80
+- When refactoring a module into a new location, keep the original file as a thin re-export shim so existing tests and imports continue to work without modification. Confidence: 0.80
+- When a module is moved to a new location, add a dedicated test file at the new location testing the implementation directly, and update the original test file to verify only the shim re-exports (not duplicate the full test suite). Confidence: 0.75
