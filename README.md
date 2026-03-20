@@ -1,6 +1,7 @@
 # deckli
 
-![deckli](deckli.png)
+<img width="1376" height="768" alt="deckli" src="https://github.com/user-attachments/assets/9cb2bda0-4631-438a-8b87-b9b1ffe43276" />
+
 
 **They shared a link. You wanted the content.**
 
