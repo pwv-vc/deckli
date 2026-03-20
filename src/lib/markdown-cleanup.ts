@@ -9,11 +9,26 @@ const MODEL_IDS: Record<"350m" | "1.2b", string> = {
   "1.2b": "onnx-community/LFM2-1.2B-Extract-ONNX",
 };
 
-export const SYSTEM_PROMPT = `Rewrite the following OCR text from a single slide into clean, readable markdown. Fix obvious OCR errors, merge broken lines into paragraphs, and remove repeated headers/footers (e.g. "Strictly Confidential", company name on every slide). Preserve headings and lists. Output only the cleaned markdown—no labels like system/user/assistant, no JSON, no XML, and no angle-bracket tags (e.g. no <tag>). Start with a heading or plain text, not structured markup. If you must use JSON, use only: {"markdown": "your cleaned text here"}.`;
+export const SYSTEM_PROMPT = `Rewrite the following OCR text from a single slide into clean, readable markdown. Fix obvious OCR errors, merge broken lines into paragraphs, and remove repeated headers/footers (e.g. "Strictly Confidential", company name on every slide). If the slide has a clear main title or heading, output it as the very first line formatted as \`# Title\`. Then continue with the rest of the cleaned content. Preserve lists. Output only the cleaned markdown—no labels like system/user/assistant, no JSON, no XML, and no angle-bracket tags (e.g. no <tag>). Start with \`# Title\` or plain text, not structured markup. If you must use JSON, use only: {"markdown": "your cleaned text here"}.`;
 
-export const FULL_DOC_SYSTEM_PROMPT = `Rewrite the following OCR markdown from a full deck into clean, readable markdown. Fix obvious OCR errors, merge broken lines into paragraphs, and remove repeated headers/footers (e.g. "Strictly Confidential"). Keep the document structure: the main # title and ## Slide N headings. Output only the cleaned markdown—no labels like system/user/assistant, no XML, and no angle-bracket tags (e.g. no <tag>). Start with # title or plain text, not structured markup. If you must use JSON, use only: {"markdown": "your cleaned text here"}.`;
+export const FULL_DOC_SYSTEM_PROMPT = `Rewrite the following OCR markdown from a full deck into clean, readable markdown. Fix obvious OCR errors, merge broken lines into paragraphs, and remove repeated headers/footers (e.g. "Strictly Confidential"). Keep the document structure: the main # title and ## Slide N headings. For each slide, if there is a clear main title or heading visible in the slide content, update the heading to \`## Slide N: Title\`. Output only the cleaned markdown—no labels like system/user/assistant, no XML, and no angle-bracket tags (e.g. no <tag>). Start with # title or plain text, not structured markup. If you must use JSON, use only: {"markdown": "your cleaned text here"}.`;
 
 export const NAME_DECK_SYSTEM_PROMPT = `From the following slide text, extract the company name and/or product name for a filename. You must respond with valid JSON only, no other text. Use this exact schema: {"title": "NameHere-deck"}. The title must be a short filename: only letters, numbers, and hyphens, ending with -deck. Example: {"title": "AcmeCorp-ProductName-deck"}.`;
+
+/**
+ * Normalize blank lines around markdown headings and collapse excessive whitespace.
+ * Ensures a blank line before and after every heading, and collapses 3+ blank lines to 2.
+ * Applied to full-doc cleanup output (which bypasses reassembleMarkdown).
+ * Exported for tests.
+ */
+export function normalizeMarkdownSpacing(markdown: string): string {
+  const text = markdown.replace(/\\n/g, "\n").replace(/\\t/g, "\t");
+  return text
+    .replace(/([^\n])\n(#{1,6} )/g, "$1\n\n$2")
+    .replace(/(#{1,6} [^\n]+)\n([^\n])/g, "$1\n\n$2")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
 
 /** Rough token count (chars / 4). Exported for callers to decide full-doc vs slide-by-slide. */
 export function estimateTokens(str: string): number {
@@ -83,7 +98,7 @@ export function extractMarkdownFromStructured(reply: string): string | null {
     }
   } catch {
     const m = t.match(/"markdown"\s*:\s*"((?:[^"\\]|\\.)*)"/);
-    if (m) return m[1].replace(/\\"/g, '"').trim() || null;
+    if (m) return m[1].replace(/\\"/g, '"').replace(/\\n/g, "\n").replace(/\\t/g, "\t").trim() || null;
   }
   return null;
 }
@@ -129,7 +144,7 @@ export function splitMarkdownIntoSlides(rawMarkdown: string): ParsedMarkdown {
   if (titleMatch) title = titleMatch[1].trim();
 
   const slides: ParsedSlide[] = [];
-  const slideRegex = /\n##\s+Slide\s+(\d+)\s*\n/g;
+  const slideRegex = /\n##\s+Slide\s+(\d+)[^\n]*\n/g;
   let match: RegExpExecArray | null;
   let lastEnd = 0;
   let lastIndex = 0;
@@ -158,8 +173,23 @@ export function reassembleMarkdown(parsed: ParsedMarkdown, cleanedBodies: string
   const parts: string[] = [`# ${parsed.title}`, ""];
   const sortedSlides = [...parsed.slides].sort((a, b) => a.index - b.index);
   sortedSlides.forEach((slide, i) => {
-    parts.push(`## Slide ${slide.index}`, "");
-    parts.push(cleanedBodies[i] ?? slide.body);
+    let body = cleanedBodies[i] ?? slide.body;
+    const titleMatch = body.match(/^#\s+(.+?)(?:\n|$)/);
+    let slideHeading = `## Slide ${slide.index}`;
+    if (titleMatch) {
+      const extractedTitle = titleMatch[1].trim();
+      slideHeading = `## Slide ${slide.index}: ${extractedTitle}`;
+      body = body.slice(titleMatch[0].length).trimStart();
+      // Remove echoed title if the model repeated it as the first line of the body
+      const firstLine = body.split("\n")[0].trim();
+      if (firstLine.toLowerCase() === extractedTitle.toLowerCase()) {
+        body = body.slice(firstLine.length).trimStart();
+      }
+    }
+    // Collapse excessive blank lines in the cleaned body
+    body = body.replace(/\n{3,}/g, "\n\n").trim();
+    parts.push(slideHeading, "");
+    parts.push(body);
     parts.push("", "---", "");
   });
   if (parts[parts.length - 1] === "" && parts[parts.length - 2] === "") {
@@ -437,9 +467,9 @@ async function cleanupMarkdownWithLocalExtract(
         ? out[0].generated_text
         : "";
       const cleaned = extractAssistantReply(generated, fullPrompt);
-      if (cleaned && !looksLikeStructuredOutput(cleaned)) return { markdown: cleaned, estimatedCostUsd: null };
+      if (cleaned && !looksLikeStructuredOutput(cleaned)) return { markdown: normalizeMarkdownSpacing(cleaned), estimatedCostUsd: null };
       const fromStruct = extractMarkdownFromStructured(cleaned);
-      if (fromStruct) return { markdown: fromStruct, estimatedCostUsd: null };
+      if (fromStruct) return { markdown: normalizeMarkdownSpacing(fromStruct), estimatedCostUsd: null };
       return { markdown: rawMarkdown, estimatedCostUsd: null };
     } catch (err) {
       debugLog(options, `Full-doc cleanup failed: ${err instanceof Error ? err.message : String(err)}`);

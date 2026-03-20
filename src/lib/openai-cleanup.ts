@@ -7,6 +7,7 @@ import {
   isOpenAiModelKey,
   looksLikeStructuredOutput,
   NAME_DECK_SYSTEM_PROMPT,
+  normalizeMarkdownSpacing,
   parseTitleFromJson,
   reassembleMarkdown,
   sanitizeFriendlyDeckName,
@@ -180,9 +181,9 @@ export async function cleanupMarkdownWithOpenAi(
       );
       logOpenAiDebug("cleanup (full-doc)", modelId, metrics, debug);
       const est = metrics.estimatedCostUsd ?? null;
-      if (cleaned && !looksLikeStructuredOutput(cleaned)) return { markdown: cleaned, estimatedCostUsd: est };
+      if (cleaned && !looksLikeStructuredOutput(cleaned)) return { markdown: normalizeMarkdownSpacing(cleaned), estimatedCostUsd: est };
       const fromStruct = extractMarkdownFromStructured(cleaned);
-      if (fromStruct) return { markdown: fromStruct, estimatedCostUsd: est };
+      if (fromStruct) return { markdown: normalizeMarkdownSpacing(fromStruct), estimatedCostUsd: est };
       return { markdown: rawMarkdown, estimatedCostUsd: est };
     } catch (err) {
       debugLog({ debug }, `OpenAI cleanup failed: ${err instanceof Error ? err.message : String(err)}`);

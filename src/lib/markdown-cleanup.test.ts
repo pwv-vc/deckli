@@ -8,6 +8,7 @@ import {
   estimateTokens,
   looksLikeStructuredOutput,
   getCleanupModelLabel,
+  normalizeMarkdownSpacing,
 } from "./markdown-cleanup.js";
 
 describe("splitMarkdownIntoSlides", () => {
@@ -45,6 +46,29 @@ Some text without slide headers.
     expect(parsed.slides).toHaveLength(0);
   });
 
+  it("parses ## Slide N: Title headings produced by cleanup", () => {
+    const raw = `# My Deck
+
+## Slide 1: Product Overview
+
+First slide content.
+
+---
+
+## Slide 2: Market Size
+
+Second slide content.
+
+---
+`;
+    const parsed = splitMarkdownIntoSlides(raw);
+    expect(parsed.slides).toHaveLength(2);
+    expect(parsed.slides[0].index).toBe(1);
+    expect(parsed.slides[0].body).toContain("First slide content");
+    expect(parsed.slides[1].index).toBe(2);
+    expect(parsed.slides[1].body).toContain("Second slide content");
+  });
+
   it("strips trailing --- from slide bodies", () => {
     const raw = `# Deck
 
@@ -76,6 +100,93 @@ describe("reassembleMarkdown", () => {
     expect(out).toContain("## Slide 2");
     expect(out).toContain("Cleaned second");
     expect(out).toContain("---");
+  });
+
+  it("promotes # Title from cleaned body into ## Slide N: Title heading", () => {
+    const parsed = {
+      title: "My Deck",
+      slides: [
+        { index: 1, body: "raw body" },
+        { index: 2, body: "raw body" },
+      ],
+    };
+    const out = reassembleMarkdown(parsed, [
+      "# Product Overview\n\nSome content here.",
+      "# Market Size\n\nMore content.",
+    ]);
+    expect(out).toContain("## Slide 1: Product Overview");
+    expect(out).toContain("Some content here.");
+    expect(out).not.toContain("# Product Overview");
+    expect(out).toContain("## Slide 2: Market Size");
+    expect(out).toContain("More content.");
+    expect(out).not.toContain("# Market Size");
+  });
+
+  it("leaves ## Slide N heading unchanged when cleaned body has no # title", () => {
+    const parsed = {
+      title: "My Deck",
+      slides: [{ index: 1, body: "raw" }],
+    };
+    const out = reassembleMarkdown(parsed, ["No title here, just content."]);
+    expect(out).toContain("## Slide 1\n");
+    expect(out).not.toContain("## Slide 1:");
+  });
+
+  it("removes echoed title when model repeats it as first body line", () => {
+    const parsed = {
+      title: "My Deck",
+      slides: [{ index: 1, body: "raw" }],
+    };
+    const out = reassembleMarkdown(parsed, [
+      "# Product Overview\nProduct Overview\n\nSome content.",
+    ]);
+    expect(out).toContain("## Slide 1: Product Overview");
+    const bodySection = out.split("## Slide 1: Product Overview")[1];
+    // "Product Overview" should not appear again as a standalone line
+    expect(bodySection?.trim().startsWith("Product Overview\n\nSome content")).toBe(false);
+    expect(out).toContain("Some content.");
+  });
+
+  it("collapses excessive blank lines in cleaned body", () => {
+    const parsed = {
+      title: "My Deck",
+      slides: [{ index: 1, body: "raw" }],
+    };
+    const out = reassembleMarkdown(parsed, ["Line one.\n\n\n\n\nLine two."]);
+    expect(out).not.toMatch(/\n{3,}/);
+    expect(out).toContain("Line one.");
+    expect(out).toContain("Line two.");
+  });
+});
+
+describe("normalizeMarkdownSpacing", () => {
+  it("ensures blank line after heading when content follows immediately", () => {
+    const input = "## Slide 1: Title\nContent here.";
+    const out = normalizeMarkdownSpacing(input);
+    expect(out).toBe("## Slide 1: Title\n\nContent here.");
+  });
+
+  it("ensures blank line before heading when preceded by content", () => {
+    const input = "Some text.\n## Slide 2: Next";
+    const out = normalizeMarkdownSpacing(input);
+    expect(out).toBe("Some text.\n\n## Slide 2: Next");
+  });
+
+  it("collapses 3+ blank lines to 2", () => {
+    const input = "Para one.\n\n\n\nPara two.";
+    const out = normalizeMarkdownSpacing(input);
+    expect(out).toBe("Para one.\n\nPara two.");
+  });
+
+  it("leaves already-correct spacing unchanged", () => {
+    const input = "## Heading\n\nContent.\n\nMore content.";
+    expect(normalizeMarkdownSpacing(input)).toBe(input);
+  });
+
+  it("unescapes literal \\n sequences the model may output instead of real newlines", () => {
+    const input = "# Title\\n\\n## Slide 1: Heading\\nContent here.";
+    const out = normalizeMarkdownSpacing(input);
+    expect(out).toBe("# Title\n\n## Slide 1: Heading\n\nContent here.");
   });
 });
 

@@ -12,3 +12,4 @@
 - Group multiple related source implementations under `src/lib/sources/` (index.ts registry, base.ts shared helpers, one file per source); use `detectSource(url)` in commands instead of hardcoded source-specific imports. Confidence: 0.80
 - When refactoring a module into a new location, keep the original file as a thin re-export shim so existing tests and imports continue to work without modification. Confidence: 0.80
 - When a module is moved to a new location, add a dedicated test file at the new location testing the implementation directly, and update the original test file to verify only the shim re-exports (not duplicate the full test suite). Confidence: 0.75
+- The `DeckSource` interface assumes sources return plain HTTPS image URLs for the shared downloader; sources needing auth headers, OAuth tokens, or screenshot-based extraction should implement an optional `downloadSlides()` method on `DeckSource` that overrides the generic downloader. Confidence: 0.75

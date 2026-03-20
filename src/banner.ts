@@ -12,7 +12,7 @@ const ASCII_DECKLI = [
 
 const BANNER_WIDE = `
 ${ASCII_DECKLI.map((line) => pc.white(line)).join("\n")}
-${pc.gray("  Deck → PDF. One command. Full quality.")}
+${pc.gray("  They shared a link. You wanted the content.")}
 `;
 
 // ANSI Compact–style for narrow terminals.
@@ -20,7 +20,7 @@ const BANNER_NARROW = `
 ${pc.white("  ┌──────────┐")}
 ${pc.white("  │  deckli  │")}
 ${pc.white("  └──────────┘")}
-${pc.gray("  Deck → PDF")}
+${pc.gray("  They shared a link.")}
 `;
 
 export function getBanner(): string {

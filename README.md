@@ -1,10 +1,13 @@
 # deckli
 
-**Download presentation decks with full text extraction — PDF, OCR markdown, and AI-powered cleanup in one command.**
+**They shared a link. You wanted the content.**
 
 A TypeScript CLI that downloads presentation decks and extracts searchable text from slides. Default output includes an assembled PDF, OCR markdown with AI cleanup, slide images, and a complete bundle. Currently supports **DocSend** (default); built with a plugin architecture so additional sources (Google Slides, PitchDeck, Brieflink, etc.) can be added without touching the output pipeline. Inspired by [captivus/docsend-dl](https://github.com/captivus/docsend-dl); thanks to that project.
 
 ## The Problem
+
+> *Stop screenshotting slides. Get the text, the PDF, the whole thing.*
+> *Decks shouldn't be black boxes. Extract everything.*
 
 DocSend decks are great for sharing presentations, but they're locked in a viewer. Getting the actual content — especially the text — is tedious:
 
