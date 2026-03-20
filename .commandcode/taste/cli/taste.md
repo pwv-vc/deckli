@@ -5,6 +5,7 @@
 - Use TypeScript for CLI projects. Confidence: 0.95
 - Use tsup as the build tool for CLI projects. Confidence: 0.95
 - Use vitest for testing CLI projects. Confidence: 0.95
+- Always run vitest with `--run` flag (e.g. `pnpm test --run`) to avoid watch mode timeouts. Confidence: 0.85
 - Use Commander.js for CLI command handling. Confidence: 0.95
 - Use clack for interactive user input in CLI projects. Confidence: 0.95
 - Check for existing CLI name conflicts before running npm link. Confidence: 0.95

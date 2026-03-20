@@ -40,7 +40,7 @@ pnpm dev -- -o ./exports https://docsend.com/view/XXXXXX
 
 - **PDF by default** — slides are assembled into a single PDF at full resolution
 - **Text extraction** — OCR markdown extraction with AI-powered cleanup (default: `gpt-4o-mini`, or local ONNX models)
-- **AI post-processing** — after cleanup, runs a configurable plugin workflow: deck summary, team extraction, link extraction, and a "What if you could…" investor statement; each step writes its own named `.md` file; all steps are on by default and individually opt-out (`--no-summary`, `--no-team`, `--no-links`, `--no-whatif`)
+- **AI post-processing** — after cleanup, runs a configurable plugin workflow: deck summary, team extraction, link extraction, a "What if you could…" investor statement, favicon fetch, and a full-page website screenshot; each step writes its own named output file; all steps are on by default and individually opt-out (`--no-summary`, `--no-team`, `--no-links`, `--no-whatif`, `--no-favicon`, `--no-screenshot`)
 - **Complete bundles** — each deck gets its own folder with PDF, markdown, post-processing outputs, `summary.json`, and a zip archive
 - **Smart naming** — detects deck titles from slide content and uses friendly filenames; title detection uses OpenAI structured JSON output for reliable parsing
 - **Login support** — handles private and email-gated decks with per-deck session management
@@ -105,12 +105,15 @@ After markdown cleanup, deckli runs a **post-processing workflow** on the cleane
 | `team` | `{name}.team.md` | Team profiles: founders called out, roles, backgrounds, LinkedIn URLs, emails |
 | `links` | `{name}.links.md` | All URLs categorized by type (LinkedIn, websites, references, social) |
 | `whatif` | `{name}.whatif.md` | A single "What if you could…" investor statement |
+| `favicon` | `{name}.favicon.{ico\|png\|svg}` | Company favicon fetched from the website URL found in the deck |
+| `screenshot` | `{name}.screenshot.png` | Full-page screenshot of the company's main website |
 
-All four steps run by default. Disable individual steps:
+All six steps run by default. Disable individual steps:
 
 ```bash
 deckli https://docsend.com/view/XXXXXX --no-whatif
 deckli https://docsend.com/view/XXXXXX --no-summary --no-team
+deckli https://docsend.com/view/XXXXXX --no-favicon --no-screenshot
 deckli https://docsend.com/view/XXXXXX --no-cleanup   # skips all post-processing too
 ```
 
@@ -146,6 +149,8 @@ These match **`deckli --help`** / **`deckli download --help`** (wording may wrap
 - **`--no-team`** — Skip the team extraction post-processing step.
 - **`--no-links`** — Skip the links extraction post-processing step.
 - **`--no-whatif`** — Skip the "What if you could…" post-processing step.
+- **`--no-favicon`** — Skip the favicon fetch post-processing step.
+- **`--no-screenshot`** — Skip the website screenshot post-processing step.
 - **`--force`** — Re-download slides even if they already exist (**`~/.deckli/cache`** for PDF format, or **`<slug>/images`** for PNG). Without it, cached/on-disk slides are reused when possible.
 - **`--no-headless`** — Show Chromium (useful for login or debugging).
 - **`--json`** — Print the run summary as JSON on **stdout** (no banner). **`summary.json`**, the zip, and other files are still written under **`<parent>/<slug>/`**.
@@ -206,7 +211,7 @@ deckli logout                                 # clear all saved logins
 4. If slide images are already present (**`<slug>/images/`** for PNG format, or `~/.deckli/cache/<slug>/` for PDF), skips downloading unless **`--force`** is used; then assembles PDF and/or runs markdown/cleanup/rename as requested.
 5. Writes the PDF and (unless **`--no-markdown`**) **`{name}.ocr.md`** into **`<parent>/<slug>/`**.
 6. Detects a friendly name (first-slide text + configured model, using structured JSON output for OpenAI) and (unless **`--no-cleanup`**) cleans markdown, then renames the PDF and markdown files (`.ocr.md`, `.md`) when the name differs from the slug.
-7. Runs the **post-processing workflow** on the cleaned markdown (unless `--no-cleanup` was used): each active plugin calls OpenAI and writes its output file (`{name}.summary.md`, `{name}.team.md`, `{name}.links.md`, `{name}.whatif.md`). Individual steps can be skipped with `--no-summary`, `--no-team`, `--no-links`, `--no-whatif`.
+7. Runs the **post-processing workflow** on the cleaned markdown (unless `--no-cleanup` was used): LLM plugins call OpenAI and write their output files (`{name}.summary.md`, `{name}.team.md`, `{name}.links.md`, `{name}.whatif.md`); action plugins perform HTTP/browser work (`{name}.favicon.{ext}`, `{name}.screenshot.png`) — the `favicon` and `screenshot` plugins use a small OpenAI call to extract the company website URL from the deck, then fetch the favicon and take a full-page Playwright screenshot respectively. Individual steps can be skipped with `--no-summary`, `--no-team`, `--no-links`, `--no-whatif`, `--no-favicon`, `--no-screenshot`.
 8. Writes **`summary.json`** (same fields as **`--json`** stdout, plus `slug`, `deckDir`, `downloadedAt`, `postProcessPaths`, etc.), builds **`{name}.zip`** (PDF/markdown/post-processing outputs/`summary.json`/bundled **`images/`** when applicable), then prints a **summary** with dim rules and **OSC 8** `file://` links where the terminal supports them.
 
 ## Config
@@ -217,7 +222,7 @@ Config and browser profile are stored in `~/.deckli/`:
 - **`markdownCleanupModel`** — Which model to use for title detection, markdown cleanup, and post-processing. **Default: `"gpt-4o-mini"`** (OpenAI; requires `OPENAI_API_KEY` in the environment). For local ONNX only, use `"350m"` or `"1.2b"`. Any model id starting with `gpt-` uses the OpenAI API. Stored in `config.json`.
 - **`markdownContextLimitTokens`** — Model context window in tokens (default 32000). Used when full-doc cleanup is enabled.
 - **`markdownCleanupFullDoc`** — For **local** models (`350m` / `1.2b`) only: when `true`, cleanup may run on the full document in one call when within `markdownContextLimitTokens` (faster but can trigger structured/XML output from Extract models). When `false` (default), cleanup runs slide-by-slide. **OpenAI** models use one full-deck request whenever the deck fits the internal ~120k-token budget, regardless of this flag.
-- **`postProcessSteps`** — Array of plugin IDs to include in the post-processing workflow. Defaults to all built-in plugins: `["summary", "team", "links", "whatif"]`. Use this to permanently restrict which steps run (e.g. `["summary", "whatif"]`). Individual steps can also be disabled per-run with `--no-summary`, `--no-team`, `--no-links`, `--no-whatif`.
+- **`postProcessSteps`** — Array of plugin IDs to include in the post-processing workflow. Defaults to all built-in plugins: `["summary", "team", "links", "whatif", "favicon", "screenshot"]`. Use this to permanently restrict which steps run (e.g. `["summary", "whatif"]`). Individual steps can also be disabled per-run with `--no-summary`, `--no-team`, `--no-links`, `--no-whatif`, `--no-favicon`, `--no-screenshot`.
 - `profiles/<key>/` — One browser profile per deck (key = slug or `v-SPACE-NAME`). Used when you run `deckli login <url>` for that deck.
 
 ### OpenAI API key (environment variable)
@@ -283,10 +288,13 @@ deckli/
 │       │   └── docsend.ts       # DocSend DeckSource implementation (URL parsing, Playwright scraping, page_data API)
 │       ├── plugins/             # Post-processing plugin system (one file per plugin)
 │       │   ├── index.ts         # Registry: imports all plugins, exports BUILT_IN_PLUGINS + DEFAULT_POST_PROCESS_STEPS
+│       │   ├── plugin-utils.ts  # Shared utility: extractCompanyWebsiteUrl() via OpenAI json_object call
 │       │   ├── summary.ts       # summaryPlugin — executive summary (## sections, factual)
 │       │   ├── team.ts          # teamPlugin — all team members; founders/co-founders called out, LinkedIn URLs, emails
 │       │   ├── links.ts         # linksPlugin — categorized URL extraction
-│       │   └── whatif.ts        # whatifPlugin — single "What if you could…" investor sentence
+│       │   ├── whatif.ts        # whatifPlugin — single "What if you could…" investor sentence
+│       │   ├── favicon.ts       # faviconPlugin — fetches company favicon via HTTP (/favicon.ico + HTML <link> fallback)
+│       │   └── screenshot.ts    # screenshotPlugin — full-page Playwright screenshot of company website
 │       ├── assembler.ts         # PDF assembly from slide PNGs (pdf-lib)
 │       ├── cli-icons.ts         # CLI status symbols and ANSI colors (figures + picocolors)
 │       ├── constants.ts         # Shared constants: USER_AGENT, DEFAULT_CONTEXT_LIMIT_TOKENS
@@ -330,6 +338,8 @@ deckli/
 ├── {name}.team.md           # Team profiles — founders called out (post-processing)
 ├── {name}.links.md          # Extracted URLs (post-processing)
 ├── {name}.whatif.md         # "What if you could…" statement (post-processing)
+├── {name}.favicon.ico       # Company favicon (post-processing; extension varies: .ico, .png, .svg)
+├── {name}.screenshot.png    # Full-page website screenshot (post-processing)
 ├── summary.json             # Run metadata (paths, sizes, AI costs, downloadedAt, postProcessPaths)
 ├── {name}.zip               # All of the above bundled
 └── images/                  # Slide PNGs (when --bundle-images, default on)
@@ -465,9 +475,11 @@ const SOURCES: DeckSource[] = [docsendSource, googleSource];
 
 After markdown cleanup, deckli runs a **post-processing workflow** — a sequence of plugins that each receive the cleaned markdown, call OpenAI, and write a named output file. The plugin system mirrors the deck source architecture: each plugin is a separate file under `src/lib/plugins/`, and the registry in `src/lib/plugins/index.ts` controls which plugins are available.
 
-### The `PostProcessPlugin` interface
+### Plugin interfaces
 
-Defined in `src/lib/types.ts`:
+Two plugin interfaces are defined in `src/lib/types.ts`:
+
+**`PostProcessPlugin`** — LLM-driven plugins that send the cleaned markdown to OpenAI and write the response:
 
 ```typescript
 interface PostProcessPlugin {
@@ -481,14 +493,30 @@ interface PostProcessPlugin {
 }
 ```
 
-The engine in `src/lib/post-processing.ts` iterates the active plugin IDs, looks each one up in the registry, calls `client.chat.completions.create` with the plugin's `systemPrompt` and the cleaned markdown as the user message, then writes the raw model output to `<deckDir>/<deckTitle>.<outputSuffix>.<outputFormat>`. Each plugin can optionally override the model via its `model` field; otherwise the workflow's configured model (from `markdownCleanupModel` in `~/.deckli/config.json`, default `gpt-4o-mini`) is used.
+**`ActionPlugin`** — Custom async plugins that implement their own `run()` method (HTTP fetches, browser automation, etc.):
+
+```typescript
+interface ActionPlugin {
+  id: string;           // unique key used as the CLI flag name and registry key, e.g. "favicon"
+  label: string;        // display name shown in the spinner, e.g. "Fetching favicon"
+  outputSuffix: string; // base suffix for the output filename, e.g. "favicon"
+  run(
+    markdown: string,   // the full cleaned deck markdown
+    outputDir: string,  // deck output directory to write files into
+    title: string,      // deck title (used for output filenames)
+    options: ActionPluginRunOptions
+  ): Promise<PostProcessResult>;
+}
+```
+
+The engine in `src/lib/post-processing.ts` uses a type guard (`isActionPlugin`) to branch: LLM plugins call `client.chat.completions.create` and write the response; action plugins call their `run()` method directly.
 
 ### Plugin registry
 
 `src/lib/plugins/index.ts` imports all plugin files and exports:
 
-- **`BUILT_IN_PLUGINS`** — `Record<string, PostProcessPlugin>` keyed by plugin ID
-- **`DEFAULT_POST_PROCESS_STEPS`** — ordered array of IDs run when no `postProcessSteps` config is set
+- **`BUILT_IN_PLUGINS`** — `Record<string, PostProcessPlugin | ActionPlugin>` keyed by plugin ID
+- **`DEFAULT_POST_PROCESS_STEPS`** — ordered array of IDs run when no `postProcessSteps` config is set: `["summary", "team", "links", "whatif", "favicon", "screenshot"]`
 
 The workflow engine looks plugins up by ID from this registry; unknown IDs are skipped with a debug warning.
 
@@ -579,13 +607,42 @@ The output is a single sentence only — no explanation, no commentary.
 
 ---
 
+#### `favicon` — Company favicon
+
+**File:** `src/lib/plugins/favicon.ts`  
+**Output:** `{name}.favicon.{ico|png|svg}`  
+**CLI flag to skip:** `--no-favicon`  
+**Type:** `ActionPlugin` (no LLM call for the fetch itself)
+
+Uses a small OpenAI call (`response_format: json_object`) to extract the company's primary website URL from the cleaned markdown, then fetches the favicon using two strategies in order:
+
+1. **`/favicon.ico`** — tries `{websiteUrl}/favicon.ico` directly; accepts the result if the response is OK and the body is non-trivial (> 100 bytes).
+2. **HTML `<link rel="icon">`** — fetches the homepage HTML and parses `<link rel="icon">` or `<link rel="shortcut icon">` tags to find the canonical icon URL, then fetches that.
+
+The file extension (`.ico`, `.png`, or `.svg`) is determined from the `Content-Type` response header. If no website URL is found in the deck or all fetch strategies fail, the step is skipped gracefully with a warning.
+
+---
+
+#### `screenshot` — Website screenshot
+
+**File:** `src/lib/plugins/screenshot.ts`  
+**Output:** `{name}.screenshot.png`  
+**CLI flag to skip:** `--no-screenshot`  
+**Type:** `ActionPlugin` (uses Playwright, no LLM call for the screenshot itself)
+
+Uses a small OpenAI call (`response_format: json_object`) to extract the company's primary website URL from the cleaned markdown, then launches a headless Chromium browser (via Playwright — already installed for deck scraping) and takes a **full-page screenshot** at 1280×800 viewport. The browser is always closed after the screenshot, even on error.
+
+If no website URL is found in the deck or navigation fails (timeout, network error, etc.), the step is skipped gracefully with a warning.
+
+---
+
 ### How to add a new post-processing plugin
 
 Adding a plugin requires four small changes. Use the `competitors` plugin as a worked example.
 
 **Step 1 — Create `src/lib/plugins/<name>.ts`**
 
-Export a single `PostProcessPlugin` constant. The `systemPrompt` is the only thing that meaningfully varies between plugins — write it as if you were briefing a senior analyst. Set `model` only if this plugin needs a different model than the default (e.g. a more capable model for complex reasoning, or a cheaper one for simple extraction).
+For an **LLM plugin**, export a `PostProcessPlugin` constant. The `systemPrompt` is the only thing that meaningfully varies — write it as if you were briefing a senior analyst:
 
 ```typescript
 // src/lib/plugins/competitors.ts
@@ -602,6 +659,25 @@ export const competitorsPlugin: PostProcessPlugin = {
 };
 ```
 
+For an **action plugin** (HTTP, browser, or other async work), export an `ActionPlugin` constant with a `run()` method:
+
+```typescript
+// src/lib/plugins/my-action.ts
+import type { ActionPlugin, ActionPluginRunOptions, PostProcessResult } from "../types.js";
+import { join } from "path";
+
+export const myActionPlugin: ActionPlugin = {
+  id: "my-action",
+  label: "Doing something custom",
+  outputSuffix: "my-action",
+  async run(markdown, outputDir, title, options): Promise<PostProcessResult> {
+    const outputPath = join(outputDir, `${title}.my-action.txt`);
+    // ... do async work, write outputPath ...
+    return { pluginId: "my-action", outputPath, success: true, estimatedCostUsd: null };
+  },
+};
+```
+
 **Step 2 — Register it in `src/lib/plugins/index.ts`**
 
 ```typescript
@@ -609,13 +685,17 @@ import { summaryPlugin } from "./summary.js";
 import { teamPlugin } from "./team.js";
 import { linksPlugin } from "./links.js";
 import { whatifPlugin } from "./whatif.js";
+import { faviconPlugin } from "./favicon.js";
+import { screenshotPlugin } from "./screenshot.js";
 import { competitorsPlugin } from "./competitors.js";  // ← add
 
-export const BUILT_IN_PLUGINS: Record<string, PostProcessPlugin> = {
+export const BUILT_IN_PLUGINS: Record<string, PostProcessPlugin | ActionPlugin> = {
   summary: summaryPlugin,
   team: teamPlugin,
   links: linksPlugin,
   whatif: whatifPlugin,
+  favicon: faviconPlugin,
+  screenshot: screenshotPlugin,
   competitors: competitorsPlugin,  // ← add
 };
 ```

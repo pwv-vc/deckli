@@ -50,6 +50,46 @@ export interface PostProcessPlugin {
   model?: string;
 }
 
+export interface PostProcessResult {
+  pluginId: string;
+  outputPath: string;
+  success: boolean;
+  estimatedCostUsd: number | null;
+}
+
+export interface PostProcessWorkflowOptions {
+  debug?: boolean;
+  onPluginStart?: (id: string, label: string) => void;
+  onPluginDone?: (result: PostProcessResult) => void;
+}
+
+/** Options passed to ActionPlugin.run(). */
+export interface ActionPluginRunOptions {
+  debug?: boolean;
+  /** OpenAI model ID used for URL extraction and other small structured calls. */
+  modelId?: string;
+}
+
+/**
+ * An action-based post-processing plugin: receives cleaned markdown, performs arbitrary
+ * async work (HTTP fetches, browser automation, etc.), and writes one output file.
+ * Unlike PostProcessPlugin, it is not LLM-driven — it implements its own run() method.
+ */
+export interface ActionPlugin {
+  /** Unique key used as the registry ID and CLI flag name, e.g. `"favicon"`. */
+  id: string;
+  /** Display label shown in the spinner, e.g. `"Fetching favicon"`. */
+  label: string;
+  /** Appended to the deck title to form the output filename, e.g. `"favicon"` → `{name}.favicon.ico`. */
+  outputSuffix: string;
+  run(
+    markdown: string,
+    outputDir: string,
+    title: string,
+    options: ActionPluginRunOptions
+  ): Promise<PostProcessResult>;
+}
+
 export interface Config {
   headless: boolean;
   concurrency: number;
@@ -91,6 +131,10 @@ export interface DownloadOptions {
   links?: boolean;
   /** Run What If statement post-processing step. Defaults to `true` (CLI: `--no-whatif` to disable). */
   whatif?: boolean;
+  /** Run favicon fetch post-processing step. Defaults to `true` (CLI: `--no-favicon` to disable). */
+  favicon?: boolean;
+  /** Run website screenshot post-processing step. Defaults to `true` (CLI: `--no-screenshot` to disable). */
+  screenshot?: boolean;
   force?: boolean;
   /** Explicit source id override (e.g. "docsend"). Auto-detected from URL when omitted. */
   source?: string;

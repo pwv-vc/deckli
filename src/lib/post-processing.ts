@@ -3,25 +3,16 @@ import { writeFileSync } from "fs";
 import { join } from "path";
 import { debugLog } from "./logger.js";
 import { BUILT_IN_PLUGINS, DEFAULT_POST_PROCESS_STEPS } from "./plugins/index.js";
-import type { PostProcessPlugin } from "./plugins/index.js";
+import type { PostProcessPlugin, ActionPlugin, PostProcessResult, PostProcessWorkflowOptions } from "./types.js";
 
 export { BUILT_IN_PLUGINS, DEFAULT_POST_PROCESS_STEPS };
-export type { PostProcessPlugin };
+export type { PostProcessPlugin, ActionPlugin, PostProcessResult, PostProcessWorkflowOptions };
 
-export interface PostProcessResult {
-  pluginId: string;
-  outputPath: string;
-  success: boolean;
-  estimatedCostUsd: number | null;
+function isActionPlugin(plugin: PostProcessPlugin | ActionPlugin): plugin is ActionPlugin {
+  return typeof (plugin as ActionPlugin).run === "function";
 }
 
-export interface PostProcessWorkflowOptions {
-  debug?: boolean;
-  onPluginStart?: (id: string, label: string) => void;
-  onPluginDone?: (result: PostProcessResult) => void;
-}
-
-/** Returns the output file path for a given plugin, deck title, and deck directory. */
+/** Returns the output file path for a given LLM plugin, deck title, and deck directory. */
 export function outputPathForPlugin(deckDir: string, deckTitle: string, plugin: PostProcessPlugin): string {
   return join(deckDir, `${deckTitle}.${plugin.outputSuffix}.${plugin.outputFormat}`);
 }
@@ -34,7 +25,8 @@ function getOpenAiClient(): OpenAI | null {
 
 /**
  * Run a sequence of post-processing plugins on cleaned markdown.
- * Each plugin calls OpenAI and writes its output to `<deckDir>/<deckTitle>.<suffix>.<format>`.
+ * LLM plugins call OpenAI and write their output file.
+ * Action plugins run their own async logic (HTTP, browser, etc.).
  * Returns results for all attempted plugins; skips unknown IDs with a debug warning.
  * If no OpenAI API key is set, returns an empty array.
  */
@@ -63,8 +55,36 @@ export async function runPostProcessWorkflow(
       continue;
     }
 
-    const outputPath = outputPathForPlugin(deckDir, deckTitle, plugin);
     onPluginStart?.(plugin.id, plugin.label);
+
+    if (isActionPlugin(plugin)) {
+      const t0 = performance.now();
+      try {
+        const result = await plugin.run(cleanedMarkdown, deckDir, deckTitle, { debug, modelId });
+        const latencyMs = Math.round(performance.now() - t0);
+        debugLog({ debug }, `Action plugin "${plugin.id}" completed in ${latencyMs}ms → ${result.outputPath}`);
+        results.push(result);
+        onPluginDone?.(result);
+      } catch (err) {
+        const latencyMs = Math.round(performance.now() - t0);
+        debugLog(
+          { debug },
+          `Action plugin "${plugin.id}" failed after ${latencyMs}ms: ${err instanceof Error ? err.message : String(err)}`
+        );
+        const result: PostProcessResult = {
+          pluginId: plugin.id,
+          outputPath: "",
+          success: false,
+          estimatedCostUsd: null,
+        };
+        results.push(result);
+        onPluginDone?.(result);
+      }
+      continue;
+    }
+
+    // LLM plugin
+    const outputPath = outputPathForPlugin(deckDir, deckTitle, plugin);
     debugLog({ debug }, `Post-processing: running plugin "${plugin.id}" → ${outputPath}`);
 
     const t0 = performance.now();

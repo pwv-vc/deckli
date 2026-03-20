@@ -61,6 +61,8 @@ function resolvePostProcessSteps(config: Config, options: DownloadOptions): stri
     team: options.team,
     links: options.links,
     whatif: options.whatif,
+    favicon: options.favicon,
+    screenshot: options.screenshot,
   };
   return base.filter((id) => flags[id] !== false);
 }
@@ -748,6 +750,8 @@ export function registerDownloadCommand(program: Command): void {
     .option("--no-team", "Skip team extraction post-processing step")
     .option("--no-links", "Skip links extraction post-processing step")
     .option("--no-whatif", "Skip What If statement post-processing step")
+    .option("--no-favicon", "Skip favicon fetch post-processing step")
+    .option("--no-screenshot", "Skip website screenshot post-processing step")
     .option(
       "--force",
       "Re-download slides even if already present (~/.deckli/cache for pdf, or <slug>/images for png)"
