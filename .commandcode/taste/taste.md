@@ -16,6 +16,8 @@ See [output/taste.md](output/taste.md)
 # documentation
 - Always update the README when adding new features or changing project structure: include a directory structure section showing where files live, and document new CLI flags, commands, and output artifacts. Do not consider a feature complete until the README is updated — this is a recurring omission. Confidence: 0.98
 - When a plugin/extension architecture is added, include a dedicated README section that: lists all available plugins with their IDs, output files, and descriptions; and shows a step-by-step guide for implementing a new plugin (create the file, implement the interface, register in the index). Confidence: 0.90
+- Include the Blade Runner quote "All those moments will be lost in time, like tears in rain." in the README to reinforce the deckrd brand and mission of preserving decks. Confidence: 0.70
+- Keep the CLI banner tagline synchronized with the README tagline; when updating one, update the other to maintain consistent messaging. Confidence: 0.70
 
 # architecture
 See [architecture/taste.md](architecture/taste.md)

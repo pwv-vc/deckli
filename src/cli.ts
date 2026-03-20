@@ -21,7 +21,7 @@ const version = pkg.version;
 const program = new Command();
 
 program
-  .name("deckli")
+  .name("deckrd")
   .description(
     "Download decks into <parent>/<slug>/: PDF or PNG slides, OCR markdown, summary.json, and a zip (see README)"
   )
@@ -48,7 +48,7 @@ program
   .option("--no-cleanup", "Skip cleanup; keep raw .ocr.md only")
   .option(
     "--force",
-    "Re-download slides even if already present (~/.deckli/cache for pdf, or <slug>/images for png)"
+    "Re-download slides even if already present (~/.deckrd/cache for pdf, or <slug>/images for png)"
   )
   .option("--no-headless", "Run the browser visibly (login, debugging)")
   .option("--json", "Print summary JSON to stdout; summary.json and zip are still written under <slug>/")
@@ -64,7 +64,7 @@ program
       const json = opts.json ?? false;
       if (!json) showBanner();
       if (opts.images) {
-        console.warn("[deckli] --images is deprecated; use --format png");
+        console.warn("[deckrd] --images is deprecated; use --format png");
       }
       try {
         await runDownload(url, {

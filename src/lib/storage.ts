@@ -4,13 +4,13 @@ import { basename, dirname, join, isAbsolute } from "path";
 import type { Config } from "./types.js";
 import { DEFAULT_CONFIG } from "./types.js";
 
-const CONFIG_DIR_NAME = ".deckli";
+const CONFIG_DIR_NAME = ".deckrd";
 const PROFILES_DIR_NAME = "profiles";
 const CACHE_DIR_NAME = "cache";
 const CONFIG_FILE_NAME = "config.json";
 
 function getConfigDir(): string {
-  const base = process.env.DECKLI_HOME ?? homedir();
+  const base = process.env.DECKRD_HOME ?? homedir();
   const dir = join(base, CONFIG_DIR_NAME);
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
@@ -114,7 +114,7 @@ export function resolveDeckDir(parentOutput: string, slugOrTitle: string): strin
   return join(parentOutput, sanitizeDeckDirName(slugOrTitle));
 }
 
-export const CACHE_METADATA_FILENAME = ".deckli-cache.json";
+export const CACHE_METADATA_FILENAME = ".deckrd-cache.json";
 
 export interface CacheMetadata {
   slideCount: number;

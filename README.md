@@ -1,9 +1,12 @@
-# deckli
+# deckrd
 
-<img width="1376" height="768" alt="deckli" src="https://github.com/user-attachments/assets/9cb2bda0-4631-438a-8b87-b9b1ffe43276" />
+<img width="1376" height="768" alt="deckrd" src="https://github.com/user-attachments/assets/9cb2bda0-4631-438a-8b87-b9b1ffe43276" />
 
+> Named after Deckard, the protagonist from Ridley Scott's *Blade Runner* (1982) — a replicant hunter who sees past illusions to uncover truth, much like this tool extracts decks from black boxes.
+>
+> _"All those moments will be lost in time, like tears in rain."_ — Don't let your decks disappear. Extract them.
 
-**They shared a link. You wanted the content.**
+**They shared a link. You wanted the content. Decks shouldn't be black boxes.**
 
 A TypeScript CLI that downloads presentation decks and extracts searchable text from slides. Default output includes an assembled PDF, OCR markdown with AI cleanup, AI post-processing analysis, slide images, and a complete bundle. Currently supports **DocSend** (default); built with a plugin architecture so additional sources (Google Slides, PitchDeck, Brieflink, etc.) can be added without touching the output pipeline. Inspired by [captivus/docsend-dl](https://github.com/captivus/docsend-dl); thanks to that project.
 
@@ -19,7 +22,7 @@ DocSend decks are great for sharing presentations, but they're locked in a viewe
 - **Manual work**: Screenshotting slides and transcribing text is slow and error-prone
 - **No bulk access**: Fetching multiple decks or organizing them systematically is difficult
 
-**deckli solves this** by automating the entire workflow: fetching slides, extracting text via OCR, cleaning it with AI models, running post-processing analysis, and organizing everything into a structured bundle. You get both the visual slides (PDF/PNG) and the extracted text (markdown) ready for search, analysis, or AI processing.
+**deckrd solves this** by automating the entire workflow: fetching slides, extracting text via OCR, cleaning it with AI models, running post-processing analysis, and organizing everything into a structured bundle. You get both the visual slides (PDF/PNG) and the extracted text (markdown) ready for search, analysis, or AI processing.
 
 ## Quickstart
 
@@ -67,7 +70,7 @@ Link globally (check for name conflicts first):
 
 ```bash
 pnpm link --global
-deckli https://docsend.com/view/XXXXXX
+deckrd https://docsend.com/view/XXXXXX
 ```
 
 ## Usage
@@ -75,8 +78,8 @@ deckli https://docsend.com/view/XXXXXX
 ### Download as PDF (default)
 
 ```bash
-deckli https://docsend.com/view/XXXXXX
-deckli https://dbx.docsend.com/view/XXXXXX
+deckrd https://docsend.com/view/XXXXXX
+deckrd https://dbx.docsend.com/view/XXXXXX
 ```
 
 Output: everything for a deck goes under **`<parent>/<slug>/`**, where `parent` is the current directory by default (or the directory you pass with **`-o`**) and `slug` is the URL-derived DocSend slug (sanitized for the filesystem). Inside that folder you get **`{name}.pdf`**, OCR/cleaned **markdown**, AI post-processing outputs, a **`summary.json`** (paths, sizes, estimated AI costs, download timestamp, etc.), slide PNGs under **`images/`** (by default), and a **`{name}.zip`** containing those artifacts.
@@ -88,10 +91,10 @@ Output: everything for a deck goes under **`<parent>/<slug>/`**, where `parent` 
 By default, the CLI runs **OCR markdown** and **model cleanup** alongside the PDF (same base name as the PDF):
 
 ```bash
-deckli https://docsend.com/view/XXXXXX
+deckrd https://docsend.com/view/XXXXXX
 ```
 
-This runs OCR (tesseract.js) on each slide and writes **`{name}.ocr.md`**, then cleans it to **`{name}.md`** using the model in `~/.deckli/config.json` (`markdownCleanupModel`). **Default model is `gpt-4o-mini` via the OpenAI API** — set **`OPENAI_API_KEY`** (see [OpenAI API key](#openai-api-key-environment-variable)). For fully local cleanup without API keys, set `markdownCleanupModel` to `"350m"` or `"1.2b"` (Liquid Nano Extract ONNX; first run downloads the model).
+This runs OCR (tesseract.js) on each slide and writes **`{name}.ocr.md`**, then cleans it to **`{name}.md`** using the model in `~/.deckrd/config.json` (`markdownCleanupModel`). **Default model is `gpt-4o-mini` via the OpenAI API** — set **`OPENAI_API_KEY`** (see [OpenAI API key](#openai-api-key-environment-variable)). For fully local cleanup without API keys, set `markdownCleanupModel` to `"350m"` or `"1.2b"` (Liquid Nano Extract ONNX; first run downloads the model).
 
 **Opt out:**
 
@@ -100,7 +103,7 @@ This runs OCR (tesseract.js) on each slide and writes **`{name}.ocr.md`**, then 
 
 ### AI Post-Processing — on by default
 
-After markdown cleanup, deckli runs a **post-processing workflow** on the cleaned markdown. Each step is an independent plugin that calls OpenAI and writes its own output file:
+After markdown cleanup, deckrd runs a **post-processing workflow** on the cleaned markdown. Each step is an independent plugin that calls OpenAI and writes its own output file:
 
 | Step         | Output file                      | Description                                                                   |
 | ------------ | -------------------------------- | ----------------------------------------------------------------------------- |
@@ -114,15 +117,15 @@ After markdown cleanup, deckli runs a **post-processing workflow** on the cleane
 All six steps run by default. Disable individual steps:
 
 ```bash
-deckli https://docsend.com/view/XXXXXX --no-whatif
-deckli https://docsend.com/view/XXXXXX --no-summary --no-team
-deckli https://docsend.com/view/XXXXXX --no-favicon --no-screenshot
-deckli https://docsend.com/view/XXXXXX --no-cleanup   # skips all post-processing too
+deckrd https://docsend.com/view/XXXXXX --no-whatif
+deckrd https://docsend.com/view/XXXXXX --no-summary --no-team
+deckrd https://docsend.com/view/XXXXXX --no-favicon --no-screenshot
+deckrd https://docsend.com/view/XXXXXX --no-cleanup   # skips all post-processing too
 ```
 
 Post-processing only runs when cleanup produced a cleaned `.md` file. If `OPENAI_API_KEY` is not set, all steps are silently skipped.
 
-The active set of steps can also be restricted via `postProcessSteps` in `~/.deckli/config.json` (see [Config](#config)).
+The active set of steps can also be restricted via `postProcessSteps` in `~/.deckrd/config.json` (see [Config](#config)).
 
 All post-processing output files are included in the **`{name}.zip`** bundle and their paths appear in **`summary.json`** under `postProcessPaths`.
 
@@ -138,10 +141,10 @@ If detection fails (no slides, empty OCR, or model error), the DocSend deck slug
 
 ### Options
 
-These match **`deckli --help`** / **`deckli download --help`** (wording may wrap in the terminal).
+These match **`deckrd --help`** / **`deckrd download --help`** (wording may wrap in the terminal).
 
 - **`-o, --output <path>`** — **Parent directory** for deck output. Each run writes to **`<parent>/<slug>/`**. If `path` ends with **`.pdf`**, only the **parent** is used (`dirname` of `path`); the filename is ignored.
-- **`--format <pdf|png>`** — **`pdf`** (default): cache slides under `~/.deckli/cache/…`, assemble one PDF, optionally copy slides into **`<slug>/images/`** for the bundle. **`png`**: no PDF; downloads go to **`<slug>/images/`**.
+- **`--format <pdf|png>`** — **`pdf`** (default): cache slides under `~/.deckrd/cache/…`, assemble one PDF, optionally copy slides into **`<slug>/images/`** for the bundle. **`png`**: no PDF; downloads go to **`<slug>/images/`**.
 - **`--no-bundle-images`** — **PDF:** do not copy slides into **`<slug>/images/`** and do not add them to the zip (cache is still used for the PDF). **PNG:** slides stay on disk under **`images/`**, but they are **omitted from the zip**.
 - **`--images`** — **Deprecated** — same as **`--format png`** (stderr warning).
 - **`-m, --markdown`** — Write OCR markdown (default: **on**). Pair with **`--no-markdown`** to disable.
@@ -154,11 +157,11 @@ These match **`deckli --help`** / **`deckli download --help`** (wording may wrap
 - **`--no-whatif`** — Skip the "What if you could…" post-processing step.
 - **`--no-favicon`** — Skip the favicon fetch post-processing step.
 - **`--no-screenshot`** — Skip the website screenshot post-processing step.
-- **`--force`** — Re-download slides even if they already exist (**`~/.deckli/cache`** for PDF format, or **`<slug>/images`** for PNG). Without it, cached/on-disk slides are reused when possible.
+- **`--force`** — Re-download slides even if they already exist (**`~/.deckrd/cache`** for PDF format, or **`<slug>/images`** for PNG). Without it, cached/on-disk slides are reused when possible.
 - **`--no-headless`** — Show Chromium (useful for login or debugging).
 - **`--json`** — Print the run summary as JSON on **stdout** (no banner). **`summary.json`**, the zip, and other files are still written under **`<parent>/<slug>/`**.
 - **`--debug`** — Verbose messages on **stderr** (URLs, extraction, model/title steps, post-processing plugin calls).
-- **`--email <address>`** — For "require email" gates: adds `?email=` to the URL and tries to submit the modal. Inbox verification still needs **`deckli login`** or **`--no-headless`** in many cases.
+- **`--email <address>`** — For "require email" gates: adds `?email=` to the URL and tries to submit the modal. Inbox verification still needs **`deckrd login`** or **`--no-headless`** in many cases.
 
 ### Login (for private or email-gated decks)
 
@@ -167,7 +170,7 @@ Login is **per deck**: each DocSend URL has its own saved session, so you can us
 1. Run login with the deck URL you want to access:
 
    ```bash
-   deckli login https://docsend.com/view/private-deck-id
+   deckrd login https://docsend.com/view/private-deck-id
    ```
 
 2. Log in with the account that can access that deck, then press Enter in the terminal.
@@ -175,15 +178,15 @@ Login is **per deck**: each DocSend URL has its own saved session, so you can us
 3. Download that deck (uses the session you just saved):
 
    ```bash
-   deckli https://docsend.com/view/private-deck-id
+   deckrd https://docsend.com/view/private-deck-id
    ```
 
-To use a different email for another deck, run `deckli login <other-url>` and log in with the other account; sessions are stored separately per deck.
+To use a different email for another deck, run `deckrd login <other-url>` and log in with the other account; sessions are stored separately per deck.
 
 For a **simple** email-only gate (enter email → Continue), you can try:
 
 ```bash
-deckli --email you@company.com https://docsend.com/view/XXXXXX
+deckrd --email you@company.com https://docsend.com/view/XXXXXX
 ```
 
 If DocSend sends a verification link, `--email` alone is not enough; use login or a headed browser as above.
@@ -193,25 +196,25 @@ If DocSend sends a verification link, `--email` alone is not enough; use login o
 Clear saved login for one deck or all:
 
 ```bash
-deckli logout https://docsend.com/view/xxxxx   # clear this deck's login
-deckli logout                                 # clear all saved logins
+deckrd logout https://docsend.com/view/xxxxx   # clear this deck's login
+deckrd logout                                 # clear all saved logins
 ```
 
 ### Commands
 
-- **`deckli [url]`** — Download deck at URL (default).
-- **`deckli download [url]`** — Same, with explicit command.
-- **`deckli login <url>`** — Open browser to log in for this deck; session stored per deck under `~/.deckli/profiles/`.
-- **`deckli logout [url]`** — Clear saved login for the given deck, or all decks if no URL.
+- **`deckrd [url]`** — Download deck at URL (default).
+- **`deckrd download [url]`** — Same, with explicit command.
+- **`deckrd login <url>`** — Open browser to log in for this deck; session stored per deck under `~/.deckrd/profiles/`.
+- **`deckrd logout [url]`** — Clear saved login for the given deck, or all decks if no URL.
 - **`-v, --version`** — Print version only.
 - **`-h, --help`** — Show help.
 
 ## How It Works
 
-1. Detects the deck source from the URL (currently DocSend), opens the page in Chromium (Playwright), using that deck's saved login if you ran `deckli login <url>` for it.
+1. Detects the deck source from the URL (currently DocSend), opens the page in Chromium (Playwright), using that deck's saved login if you ran `deckrd login <url>` for it.
 2. The source extracts each slide's image URL (DocSend: via the page's `page_data` endpoints).
 3. Downloads all slide images in parallel with retries.
-4. If slide images are already present (**`<slug>/images/`** for PNG format, or `~/.deckli/cache/<slug>/` for PDF), skips downloading unless **`--force`** is used; then assembles PDF and/or runs markdown/cleanup/rename as requested.
+4. If slide images are already present (**`<slug>/images/`** for PNG format, or `~/.deckrd/cache/<slug>/` for PDF), skips downloading unless **`--force`** is used; then assembles PDF and/or runs markdown/cleanup/rename as requested.
 5. Writes the PDF and (unless **`--no-markdown`**) **`{name}.ocr.md`** into **`<parent>/<slug>/`**.
 6. Detects a friendly name (first-slide text + configured model, using structured JSON output for OpenAI) and (unless **`--no-cleanup`**) cleans markdown, then renames the PDF and markdown files (`.ocr.md`, `.md`) when the name differs from the slug.
 7. Runs the **post-processing workflow** on the cleaned markdown (unless `--no-cleanup` was used): LLM plugins call OpenAI and write their output files (`{name}.summary.md`, `{name}.team.md`, `{name}.links.md`, `{name}.whatif.md`); action plugins perform HTTP/browser work (`{name}.favicon.{ext}`, `{name}.screenshot.png`) — the `favicon` and `screenshot` plugins use a small OpenAI call to extract the company website URL from the deck, then fetch the favicon and take a full-page Playwright screenshot respectively. Individual steps can be skipped with `--no-summary`, `--no-team`, `--no-links`, `--no-whatif`, `--no-favicon`, `--no-screenshot`.
@@ -219,20 +222,20 @@ deckli logout                                 # clear all saved logins
 
 ## Config
 
-Config and browser profile are stored in `~/.deckli/`:
+Config and browser profile are stored in `~/.deckrd/`:
 
 - `config.json` — e.g. `headless`, `concurrency`, `maxRetries`, `useStoredLogin`, `markdownCleanupModel`, `markdownContextLimitTokens`, `markdownCleanupFullDoc`, `postProcessSteps`. Model choice lives here; **the OpenAI API key does not** — use the **`OPENAI_API_KEY` environment variable** ([below](#openai-api-key-environment-variable)).
 - **`markdownCleanupModel`** — Which model to use for title detection, markdown cleanup, and post-processing. **Default: `"gpt-4o-mini"`** (OpenAI; requires `OPENAI_API_KEY` in the environment). For local ONNX only, use `"350m"` or `"1.2b"`. Any model id starting with `gpt-` uses the OpenAI API. Stored in `config.json`.
 - **`markdownContextLimitTokens`** — Model context window in tokens (default 32000). Used when full-doc cleanup is enabled.
 - **`markdownCleanupFullDoc`** — For **local** models (`350m` / `1.2b`) only: when `true`, cleanup may run on the full document in one call when within `markdownContextLimitTokens` (faster but can trigger structured/XML output from Extract models). When `false` (default), cleanup runs slide-by-slide. **OpenAI** models use one full-deck request whenever the deck fits the internal ~120k-token budget, regardless of this flag.
 - **`postProcessSteps`** — Array of plugin IDs to include in the post-processing workflow. Defaults to all built-in plugins: `["summary", "team", "links", "whatif", "favicon", "screenshot"]`. Use this to permanently restrict which steps run (e.g. `["summary", "whatif"]`). Individual steps can also be disabled per-run with `--no-summary`, `--no-team`, `--no-links`, `--no-whatif`, `--no-favicon`, `--no-screenshot`.
-- `profiles/<key>/` — One browser profile per deck (key = slug or `v-SPACE-NAME`). Used when you run `deckli login <url>` for that deck.
+- `profiles/<key>/` — One browser profile per deck (key = slug or `v-SPACE-NAME`). Used when you run `deckrd login <url>` for that deck.
 
 ### OpenAI API key (environment variable)
 
-OpenAI models read the secret from the **`OPENAI_API_KEY`** environment variable only — it is **not** stored in `~/.deckli/config.json` (so the key is not mixed with normal preferences or committed by mistake).
+OpenAI models read the secret from the **`OPENAI_API_KEY`** environment variable only — it is **not** stored in `~/.deckrd/config.json` (so the key is not mixed with normal preferences or committed by mistake).
 
-The CLI loads [dotenv](https://github.com/motdotla/dotenv) at startup, so if a **`.env`** file exists in the **current working directory** when you run `deckli`, variables from it are applied (e.g. `OPENAI_API_KEY=sk-...`). You can also:
+The CLI loads [dotenv](https://github.com/motdotla/dotenv) at startup, so if a **`.env`** file exists in the **current working directory** when you run `deckrd`, variables from it are applied (e.g. `OPENAI_API_KEY=sk-...`). You can also:
 
 - **Export in the shell** (session or add to `~/.zshrc` / `~/.bashrc`):  
   `export OPENAI_API_KEY=sk-...`
@@ -266,7 +269,7 @@ Models are downloaded on first use and cached. See [Liquid AI docs](https://docs
 
 ## Limitations
 
-- Only public decks are supported without login; for email-gated or private decks, use `deckli login <url>` for that deck first (or `--no-headless` to log in manually in a one-off run).
+- Only public decks are supported without login; for email-gated or private decks, use `deckrd login <url>` for that deck first, use `--email <address>` with an email address to login and fetch slides, or use `--no-headless` to log in manually in a one-off run.
 - Requires Chromium installed via `playwright install chromium`.
 - OCR markdown (on by default; use **`--no-markdown`** to skip) can be slow on large decks; text quality depends on slide image clarity.
 - With **local** models (`350m` / `1.2b`), cleanup downloads an ONNX model on first use (hundreds of MB) and runs locally. With **OpenAI** (default), cleanup requires network access and a valid API key. Use **`--no-cleanup`** to skip. Cleanup runs slide-by-slide by default for local models. If local cleanup seems to stall, run with **`--debug`** to see progress.
@@ -275,15 +278,15 @@ Models are downloaded on first use and cached. See [Liquid AI docs](https://docs
 ## Project Structure
 
 ```
-deckli/
+deckrd/
 ├── dist/                        # Compiled output (generated by pnpm build)
 ├── src/
 │   ├── cli.ts                   # Entry point: Commander program setup, root command action
 │   ├── banner.ts                # ASCII art welcome banner (shown unless --json)
 │   ├── commands/                # One file per CLI subcommand
-│   │   ├── download.ts          # `deckli download` — core download orchestration (PDF + PNG paths)
-│   │   ├── login.ts             # `deckli login` — open browser and save session per deck
-│   │   └── logout.ts            # `deckli logout` — clear saved sessions
+│   │   ├── download.ts          # `deckrd download` — core download orchestration (PDF + PNG paths)
+│   │   ├── login.ts             # `deckrd login` — open browser and save session per deck
+│   │   └── logout.ts            # `deckrd logout` — clear saved sessions
 │   └── lib/                     # Shared library modules (no CLI concerns)
 │       ├── sources/             # Deck source plugin system
 │       │   ├── index.ts         # Source registry: detectSource(), getSourceById(), getSourceIds()
@@ -321,12 +324,12 @@ deckli/
 └── vitest.config.ts             # Test config (vitest)
 ```
 
-**Runtime data** (outside the repo) lives under `~/.deckli/`:
+**Runtime data** (outside the repo) lives under `~/.deckrd/`:
 
 ```
-~/.deckli/
+~/.deckrd/
 ├── config.json          # User preferences (headless, model, concurrency, postProcessSteps, …)
-├── profiles/<key>/      # Per-deck Chromium browser profiles (from deckli login)
+├── profiles/<key>/      # Per-deck Chromium browser profiles (from deckrd login)
 └── cache/<slug>/        # Cached slide PNGs for PDF format (reused across runs)
 ```
 
@@ -352,7 +355,7 @@ deckli/
 
 ## Deck Sources & Plugin Architecture
 
-deckli separates **source-specific extraction** from the **shared output pipeline**. Every source implements a single `DeckSource` interface; the rest of the codebase (downloader, PDF assembler, OCR, AI cleanup, post-processing, ZIP) is source-agnostic and never needs to change when a new source is added.
+deckrd separates **source-specific extraction** from the **shared output pipeline**. Every source implements a single `DeckSource` interface; the rest of the codebase (downloader, PDF assembler, OCR, AI cleanup, post-processing, ZIP) is source-agnostic and never needs to change when a new source is added.
 
 ### The `DeckSource` interface
 
@@ -482,7 +485,7 @@ const SOURCES: DeckSource[] = [docsendSource, googleSource];
 
 ## Post-Processing Plugin Architecture
 
-After markdown cleanup, deckli runs a **post-processing workflow** — a sequence of plugins that each receive the cleaned markdown, call OpenAI, and write a named output file. The plugin system mirrors the deck source architecture: each plugin is a separate file under `src/lib/plugins/`, and the registry in `src/lib/plugins/index.ts` controls which plugins are available.
+After markdown cleanup, deckrd runs a **post-processing workflow** — a sequence of plugins that each receive the cleaned markdown, call OpenAI, and write a named output file. The plugin system mirrors the deck source architecture: each plugin is a separate file under `src/lib/plugins/`, and the registry in `src/lib/plugins/index.ts` controls which plugins are available.
 
 ### Plugin interfaces
 
@@ -756,7 +759,7 @@ const flags: Record<string, boolean | undefined> = {
 - Write `{name}.competitors.md` to the deck folder
 - Be included in `{name}.zip`
 - Appear in `summary.json` under `postProcessPaths.competitors`
-- Be skippable with `--no-competitors` or by omitting `"competitors"` from `postProcessSteps` in `~/.deckli/config.json`
+- Be skippable with `--no-competitors` or by omitting `"competitors"` from `postProcessSteps` in `~/.deckrd/config.json`
 
 ## Development
 

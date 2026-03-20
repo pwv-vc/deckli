@@ -5,6 +5,6 @@ export function debugLog(
 ): void {
   const on = typeof enabled === "boolean" ? enabled : (enabled.debug ?? false);
   if (on) {
-    console.error("[deckli debug]", ...args);
+    console.error("[deckrd debug]", ...args);
   }
 }

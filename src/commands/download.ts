@@ -726,7 +726,7 @@ export function registerDownloadCommand(program: Command): void {
   program
     .command("download [url]")
     .description(
-      "Download a deck into <parent>/<slug>/ (PDF default, or PNG slides with --format png). Same options as `deckli <url>`."
+      "Download a deck into <parent>/<slug>/ (PDF default, or PNG slides with --format png). Same options as `deckrd <url>`."
     )
     .option(
       "-o, --output <path>",
@@ -754,7 +754,7 @@ export function registerDownloadCommand(program: Command): void {
     .option("--no-screenshot", "Skip website screenshot post-processing step")
     .option(
       "--force",
-      "Re-download slides even if already present (~/.deckli/cache for pdf, or <slug>/images for png)"
+      "Re-download slides even if already present (~/.deckrd/cache for pdf, or <slug>/images for png)"
     )
     .option("--no-headless", "Run the browser visibly (login, debugging)")
     .option("--json", "Print summary JSON to stdout; summary.json and zip are still written under <slug>/")
@@ -766,7 +766,7 @@ export function registerDownloadCommand(program: Command): void {
     .action(async (url: string | undefined, options: DownloadOptions) => {
       const json = options.json ?? false;
       if (!url?.trim()) {
-        const msg = "URL is required. Example: deckli https://docsend.com/view/XXXXXX";
+        const msg = "URL is required. Example: deckrd https://docsend.com/view/XXXXXX";
         console.error(
           json ? JSON.stringify({ success: false, error: msg }, null, 2) : formatError(msg, "plain")
         );
@@ -776,7 +776,7 @@ export function registerDownloadCommand(program: Command): void {
         ? { ...options, format: "png" }
         : options;
       if (options.images) {
-        console.warn("[deckli] --images is deprecated; use --format png");
+        console.warn("[deckrd] --images is deprecated; use --format png");
       }
       try {
         await runDownload(url, resolvedOptions);

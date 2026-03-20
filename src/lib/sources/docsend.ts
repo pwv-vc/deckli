@@ -186,11 +186,11 @@ export const docsendSource: DeckSource = {
       if (hasEmailForm) {
         if (gateEmail) {
           throw new EmailGateError(
-            "Could not reach slides after email gate. The link may require verifying your inbox (DocSend email authentication), or the page blocked automated access. Try --no-headless to complete any steps manually, or deckli login <url>."
+            "Could not reach slides after email gate. The link may require verifying your inbox (DocSend email authentication), or the page blocked automated access. Try --no-headless to complete any steps manually, or deckrd login <url>."
           );
         }
         throw new EmailGateError(
-          "This deck requires an email to view. Pass --email <address> to prefill and submit the gate, try 'deckli login <url>' for a saved session, or use --no-headless to finish manually."
+          "This deck requires an email to view. Pass --email <address> to prefill and submit the gate, try 'deckrd login <url>' for a saved session, or use --no-headless to finish manually."
         );
       }
       throw new ExtractionError(

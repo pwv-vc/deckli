@@ -419,7 +419,7 @@ async function cleanupMarkdownWithLocalExtract(
     debugLog(options, `Model loaded: ${modelLabel}.`);
   } catch (err) {
     console.warn(
-      "[deckli] Markdown cleanup failed to load model:",
+      "[deckrd] Markdown cleanup failed to load model:",
       err instanceof Error ? err.message : String(err)
     );
     return { markdown: rawMarkdown, estimatedCostUsd: null };

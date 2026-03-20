@@ -1,11 +1,11 @@
 {
-  "name": "deckli",
+  "name": "deckrd",
   "version": "0.0.1",
   "description": "Download DocSend decks as PDF — one command, full quality",
   "type": "module",
   "main": "dist/cli.js",
   "bin": {
-    "deckli": "dist/cli.js"
+    "deckrd": "dist/cli.js"
   },
   "scripts": {
     "build": "tsup",

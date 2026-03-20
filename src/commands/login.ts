@@ -28,7 +28,7 @@ export function registerLoginCommand(program: Command): void {
     .action(async (url: string | undefined, options: { json?: boolean }) => {
       const json = options.json ?? false;
       if (!url?.trim()) {
-        const msg = "URL is required. Example: deckli login https://docsend.com/view/XXXXXX";
+        const msg = "URL is required. Example: deckrd login https://docsend.com/view/XXXXXX";
         console.error(json ? formatError(msg, "json") : formatError(msg, "plain"));
         process.exit(1);
       }
@@ -58,7 +58,7 @@ export function registerLoginCommand(program: Command): void {
 
         console.log(
           pc.green(
-            `Login saved for this deck (${profileKey}). Use deckli "${url.trim()}" to download.`
+            `Login saved for this deck (${profileKey}). Use deckrd "${url.trim()}" to download.`
           )
         );
       } catch (err) {

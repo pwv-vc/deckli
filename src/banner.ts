@@ -1,28 +1,28 @@
 import pc from "picocolors";
 import gradient from "gradient-string";
 
-// ANSI Shadow–style ASCII art for "deckli".
-const ASCII_DECKLI = [
-  "  ██████╗ ███████╗ ██████╗██╗  ██╗██╗     ██╗",
-  "  ██╔══██╗██╔════╝██╔════╝██║ ██╔╝██║     ██║",
-  "  ██║  ██║█████╗  ██║     █████╔╝ ██║     ██║",
-  "  ██║  ██║██╔══╝  ██║     ██╔═██╗ ██║     ██║",
-  "  ██████╔╝███████╗╚██████╗██║  ██╗███████╗██║",
-  "  ╚═════╝ ╚══════╝ ╚═════╝╚═╝  ╚═╝╚══════╝╚═╝",
+// ANSI Shadow–style ASCII art for "deckrd".
+const ASCII_DECKRD = [
+  "  ██████╗ ███████╗ ██████╗██╗  ██╗██████╗ ██████╗ ",
+  "  ██╔══██╗██╔════╝██╔════╝██║ ██╔╝██╔══██╗██╔══██╗",
+  "  ██║  ██║█████╗  ██║     █████╔╝ ██████╔╝██║  ██║",
+  "  ██║  ██║██╔══╝  ██║     ██╔═██╗ ██╔══██╗██║  ██║",
+  "  ██████╔╝███████╗╚██████╗██║  ██╗██║  ██║██████╔╝",
+  "  ╚═════╝ ╚══════╝ ╚═════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═════╝ ",
 ];
 
 // Gradient: teal → green → soft-yellow
-const deckliGradient = gradient(["#00d2c8", "#00d22e", "#ffef9e"]);
+const deckrdGradient = gradient(["#00d2c8", "#00d22e", "#ffef9e"]);
 
 const BANNER_WIDE = `
-${deckliGradient.multiline(ASCII_DECKLI.join("\n"))}
-${pc.gray("  They shared a link. You wanted the content.")}
+${deckrdGradient.multiline(ASCII_DECKRD.join("\n"))}
+${pc.gray("  They shared a link. You wanted the content. Decks shouldn't be black boxes.")}
 `;
 
 // ANSI Compact–style for narrow terminals.
 const BANNER_NARROW = `
-${deckliGradient.multiline("  ┌──────────┐\n  │  deckli  │\n  └──────────┘")}
-${pc.gray("  They shared a link.")}
+${deckrdGradient.multiline("  ┌──────────┐\n  │  deckrd  │\n  └──────────┘")}
+${pc.gray("  Decks shouldn't be black boxes.")}
 `;
 
 export function getBanner(): string {

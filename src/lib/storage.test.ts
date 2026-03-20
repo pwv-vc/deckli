@@ -14,20 +14,20 @@ import {
   sanitizeDeckDirName,
 } from "./storage.js";
 
-describe("storage (with DECKLI_HOME)", () => {
+describe("storage (with DECKRD_HOME)", () => {
   let testHome: string;
   let originalEnv: string | undefined;
 
   beforeEach(() => {
-    testHome = join(tmpdir(), `deckli-test-${randomBytes(8).toString("hex")}`);
+    testHome = join(tmpdir(), `deckrd-test-${randomBytes(8).toString("hex")}`);
     mkdirSync(testHome, { recursive: true });
-    originalEnv = process.env.DECKLI_HOME;
-    process.env.DECKLI_HOME = testHome;
+    originalEnv = process.env.DECKRD_HOME;
+    process.env.DECKRD_HOME = testHome;
   });
 
   afterEach(() => {
-    if (originalEnv !== undefined) process.env.DECKLI_HOME = originalEnv;
-    else delete process.env.DECKLI_HOME;
+    if (originalEnv !== undefined) process.env.DECKRD_HOME = originalEnv;
+    else delete process.env.DECKRD_HOME;
     if (existsSync(testHome)) {
       rmSync(testHome, { recursive: true, force: true });
     }
