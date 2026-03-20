@@ -1,10 +1,21 @@
 # deckli
 
-Download DocSend decks into **`<parent>/<slug>/`** — PDF or PNG slides, OCR markdown, **`summary.json`**, and a zip.
+**Extract and download DocSend decks with full text extraction — PDF, OCR markdown, and AI-powered cleanup in one command.**
 
-A TypeScript CLI for any public (or logged-in) DocSend deck. Default output is an assembled **PDF**; use **`--format png`** for slide PNGs only. Based on [captivus/docsend-dl](https://github.com/captivus/docsend-dl); thanks to that project.
+A TypeScript CLI that downloads any public (or logged-in) DocSend deck and extracts searchable text from slides. Default output includes an assembled PDF, OCR markdown with AI cleanup, slide images, and a complete bundle. Inspired by [captivus/docsend-dl](https://github.com/captivus/docsend-dl); thanks to that project.
 
-## Quick start
+## The Problem
+
+DocSend decks are great for sharing presentations, but they're locked in a viewer. Getting the actual content — especially the text — is tedious:
+
+- **No native export**: DocSend doesn't provide a download button for most decks
+- **Text is trapped**: Slides are images, so you can't search, copy, or analyze the content
+- **Manual work**: Screenshotting slides and transcribing text is slow and error-prone
+- **No bulk access**: Fetching multiple decks or organizing them systematically is difficult
+
+**deckli solves this** by automating the entire workflow: fetching slides, extracting text via OCR, cleaning it with AI models, and organizing everything into a structured bundle. You get both the visual slides (PDF/PNG) and the extracted text (markdown) ready for search, analysis, or AI processing.
+
+## Quickstart
 
 ```bash
 pnpm install
@@ -21,6 +32,17 @@ Or with pnpm run:
 pnpm dev https://docsend.com/view/XXXXXX
 pnpm dev -- -o ./exports https://docsend.com/view/XXXXXX
 ```
+
+## Features
+
+- **PDF by default** — slides are assembled into a single PDF at full resolution
+- **Text extraction** — OCR markdown extraction with AI-powered cleanup (default: `gpt-4o-mini`, or local ONNX models)
+- **Complete bundles** — each deck gets its own folder with PDF, markdown, images, `summary.json`, and a zip archive
+- **Smart naming** — detects deck titles from slide content and uses friendly filenames
+- **Login support** — handles private and email-gated decks with per-deck session management
+- **Fast parallel downloads** — all slides download concurrently with automatic retries
+- **Works with both** `docsend.com` and `dbx.docsend.com` URLs
+- **Headless by default** — runs in the background; use `--no-headless` to watch the browser
 
 ## Installation
 
@@ -41,15 +63,6 @@ deckli https://docsend.com/view/XXXXXX
 ```
 
 ## Usage
-
-### Help
-
-```bash
-deckli -h                    # options for the default download command
-deckli download -h           # same options, explicit subcommand
-deckli login -h
-deckli logout -h
-```
 
 ### Download as PDF (default)
 
@@ -105,7 +118,7 @@ These match **`deckli --help`** / **`deckli download --help`** (wording may wrap
 - **`--no-headless`** — Show Chromium (useful for login or debugging).
 - **`--json`** — Print the run summary as JSON on **stdout** (no banner). **`summary.json`**, the zip, and other files are still written under **`<parent>/<slug>/`**.
 - **`--debug`** — Verbose messages on **stderr** (URLs, extraction, model/title steps).
-- **`--email <address>`** — For “require email” gates: adds `?email=` to the URL and tries to submit the modal. Inbox verification still needs **`deckli login`** or **`--no-headless`** in many cases.
+- **`--email <address>`** — For "require email" gates: adds `?email=` to the URL and tries to submit the modal. Inbox verification still needs **`deckli login`** or **`--no-headless`** in many cases.
 
 ### Login (for private or email-gated decks)
 
@@ -153,10 +166,10 @@ deckli logout                                 # clear all saved logins
 - **`-v, --version`** — Print version only.
 - **`-h, --help`** — Show help.
 
-## How it works
+## How It Works
 
 1. Opens the DocSend page in Chromium (Playwright), using that deck's saved login if you ran `deckli login <url>` for it.
-2. Extracts each slide’s image URL from the page’s `page_data` endpoints.
+2. Extracts each slide's image URL from the page's `page_data` endpoints.
 3. Downloads all slide images in parallel with retries.
 4. If slide images are already present (**`<slug>/images/`** for PNG format, or `~/.deckli/cache/<slug>/` for PDF), skips downloading unless **`--force`** is used; then assembles PDF and/or runs markdown/cleanup/rename as requested.
 5. Writes the PDF and (unless **`--no-markdown`**) **`{name}.ocr.md`** into **`<parent>/<slug>/`**.
@@ -200,10 +213,10 @@ OpenAI cleanup uses **one full-deck request** when the estimated prompt + output
 
 Set `markdownCleanupModel` to **`350m`** or **`1.2b`** to use **Liquid AI LFM2 Extract** (ONNX, via [Transformers.js](https://huggingface.co/docs/transformers.js)), from the [Liquid Nanos](https://huggingface.co/collections/LiquidAI/liquid-nanos) collection. These checkpoints are tuned for structured extraction; if you see XML or angle-bracket output, prefer **slide-by-slide** (default: `markdownCleanupFullDoc: false`) and/or **`1.2b`**.
 
-| Option   | Model (Hugging Face)                         | Notes              |
-|----------|------------------------------------------------|--------------------|
-| `350m`   | `onnx-community/LFM2-350M-Extract-ONNX`       | Smaller, faster |
-| `1.2b`   | `onnx-community/LFM2-1.2B-Extract-ONNX`      | Larger; higher quality   |
+| Option | Model (Hugging Face)                    | Notes                  |
+| ------ | --------------------------------------- | ---------------------- |
+| `350m` | `onnx-community/LFM2-350M-Extract-ONNX` | Smaller, faster        |
+| `1.2b` | `onnx-community/LFM2-1.2B-Extract-ONNX` | Larger; higher quality |
 
 Models are downloaded on first use and cached. See [Liquid AI docs](https://docs.liquid.ai/docs/models/lfm2-350m-extract) and the [onnx-community](https://huggingface.co/onnx-community) space for details.
 
@@ -214,7 +227,7 @@ Models are downloaded on first use and cached. See [Liquid AI docs](https://docs
 - OCR markdown (on by default; use **`--no-markdown`** to skip) can be slow on large decks; text quality depends on slide image clarity.
 - With **local** models (`350m` / `1.2b`), cleanup downloads an ONNX model on first use (hundreds of MB) and runs locally. With **OpenAI** (default), cleanup requires network access and a valid API key. Use **`--no-cleanup`** to skip. Cleanup runs slide-by-slide by default for local models. If local cleanup seems to stall, run with **`--debug`** to see progress.
 
-## Project structure
+## Project Structure
 
 ```
 deckli/
