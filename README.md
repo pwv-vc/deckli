@@ -768,6 +768,12 @@ pnpm test             # Run vitest
 
 **CLI icons** — Status symbols for ora spinners and the download summary are defined in `src/lib/cli-icons.ts`: raw glyphs in `CLI_ICONS`, semantic ANSI colors in `CLI_ICONS_COLOR` (picocolors). Edit that file to swap characters or colors app-wide (glyphs use the [`figures`](https://github.com/sindresorhus/figures) package).
 
+## Image Generation Prompt
+
+```
+minimalist terminal UI illustration, dark mode GitHub README style, black background with soft gradient, neon green and cyan accent colors, monospaced typography, clean CLI interface, glowing text and subtle blur bloom, futuristic developer tool vibe, centered composition, high contrast, modern dev aesthetic, smooth rounded UI elements, glassy overlay panels, crisp vector lines, minimal noise, elegant and polished, hacker + startup branding style
+```
+
 ## License
 
 MIT
