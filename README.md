@@ -1,6 +1,7 @@
 # deckrd
 
-<img width="1376" height="768" alt="deckrd" src="https://github.com/user-attachments/assets/9cb2bda0-4631-438a-8b87-b9b1ffe43276" />
+<img width="1376" height="768" alt="deckrd" src="https://github.com/user-attachments/assets/5a8723d9-3d78-4095-82b0-4a2f50f81b65" />
+
 
 > Named after Deckard, the protagonist from Ridley Scott's *Blade Runner* (1982) — a replicant hunter who sees past illusions to uncover truth, much like this tool extracts decks from black boxes.
 >
