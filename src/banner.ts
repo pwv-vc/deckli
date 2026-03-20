@@ -1,6 +1,7 @@
 import pc from "picocolors";
+import gradient from "gradient-string";
 
-// ANSI Shadow–style ASCII art for "deckli". Minimal white/gray per taste.
+// ANSI Shadow–style ASCII art for "deckli".
 const ASCII_DECKLI = [
   "  ██████╗ ███████╗ ██████╗██╗  ██╗██╗     ██╗",
   "  ██╔══██╗██╔════╝██╔════╝██║ ██╔╝██║     ██║",
@@ -10,16 +11,17 @@ const ASCII_DECKLI = [
   "  ╚═════╝ ╚══════╝ ╚═════╝╚═╝  ╚═╝╚══════╝╚═╝",
 ];
 
+// Gradient: teal → green → soft-yellow
+const deckliGradient = gradient(["#00d2c8", "#00d22e", "#ffef9e"]);
+
 const BANNER_WIDE = `
-${ASCII_DECKLI.map((line) => pc.white(line)).join("\n")}
+${deckliGradient.multiline(ASCII_DECKLI.join("\n"))}
 ${pc.gray("  They shared a link. You wanted the content.")}
 `;
 
 // ANSI Compact–style for narrow terminals.
 const BANNER_NARROW = `
-${pc.white("  ┌──────────┐")}
-${pc.white("  │  deckli  │")}
-${pc.white("  └──────────┘")}
+${deckliGradient.multiline("  ┌──────────┐\n  │  deckli  │\n  └──────────┘")}
 ${pc.gray("  They shared a link.")}
 `;
 

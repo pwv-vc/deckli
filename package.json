@@ -20,7 +20,10 @@
     "pdf",
     "cli"
   ],
-  "files": ["dist", "README.md"],
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "license": "MIT",
   "engines": {
     "node": ">=18"
@@ -31,6 +34,7 @@
     "commander": "^12.1.0",
     "dotenv": "^17.3.1",
     "figures": "^6.1.0",
+    "gradient-string": "^3.0.0",
     "openai": "^6.32.0",
     "ora": "^8.1.1",
     "pdf-lib": "^1.17.1",
