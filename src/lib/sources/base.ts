@@ -9,6 +9,8 @@ export interface LaunchOptions {
   profileDir?: string;
   userAgent?: string;
   viewport?: { width: number; height: number };
+  /** When true, Playwright intercepts file downloads (required for page.waitForEvent('download')). */
+  acceptDownloads?: boolean;
 }
 
 /** Launch a Playwright browser context, optionally with a persistent profile. */
@@ -18,6 +20,7 @@ export async function launchBrowserContext(options: LaunchOptions): Promise<Brow
     profileDir,
     userAgent = USER_AGENT,
     viewport = { width: 1920, height: 1080 },
+    acceptDownloads = false,
   } = options;
 
   const launchArgs = {
@@ -28,13 +31,14 @@ export async function launchBrowserContext(options: LaunchOptions): Promise<Brow
   if (profileDir) {
     return chromium.launchPersistentContext(profileDir, {
       ...launchArgs,
+      acceptDownloads,
       userAgent,
       viewport,
     });
   }
 
   const browser = await chromium.launch(launchArgs);
-  return browser.newContext({ userAgent, viewport });
+  return browser.newContext({ userAgent, viewport, acceptDownloads });
 }
 
 /** Fill email field (if present) and click Continue; return true once slide carousel is visible. */
@@ -76,17 +80,18 @@ export async function tryPassEmailGate(
 
 /**
  * Generic login flow: opens a persistent browser profile, navigates to the URL,
- * waits for the user to log in manually, then closes the context.
+ * and returns the context so the caller can wait for the user to finish before closing.
+ * The caller is responsible for calling context.close() after the user signals completion.
  * Sources can use this directly or override DeckSource.login() for custom flows.
  */
 export async function loginWithBrowser(
   url: string,
   profileDir: string,
   options: { headless?: boolean; debug?: boolean } = {}
-): Promise<void> {
+): Promise<BrowserContext> {
   const { headless = false } = options;
   const context = await launchBrowserContext({ headless, profileDir });
   const page = await context.newPage();
   await page.goto(url);
-  await context.close();
+  return context;
 }

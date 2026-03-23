@@ -10,6 +10,7 @@ import { Command, Option } from "commander";
 import { registerDownloadCommand, runDownload } from "./commands/download.js";
 import { registerLoginCommand } from "./commands/login.js";
 import { registerLogoutCommand } from "./commands/logout.js";
+import { registerCacheCommand } from "./commands/cache.js";
 import { showBanner } from "./banner.js";
 import { formatError } from "./lib/output.js";
 
@@ -92,6 +93,7 @@ program
 registerDownloadCommand(program);
 registerLoginCommand(program);
 registerLogoutCommand(program);
+registerCacheCommand(program);
 
 (async () => {
   const args = process.argv.slice(2);
@@ -103,7 +105,7 @@ registerLogoutCommand(program);
   await program.parseAsync(process.argv);
 
   const url = program.processedArgs[0];
-  const hasSubcommand = ["download", "login", "logout"].includes(args[0] ?? "");
+  const hasSubcommand = ["download", "login", "logout", "cache"].includes(args[0] ?? "");
   if (!hasSubcommand && !url) {
     program.outputHelp();
   }

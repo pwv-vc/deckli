@@ -7,6 +7,12 @@ export interface DeckInfo {
   warnings: string[];
   /** URL-derived slug (e.g. from /view/SLUG) when available; used for cache key. */
   slug?: string | null;
+  /**
+   * Path to a pre-downloaded PDF file (e.g. from Canva's native export).
+   * When set, runPdfDownload skips downloadSlides + assemblePdf and uses this file directly.
+   * imageUrls are still downloaded for OCR when present.
+   */
+  directPdfPath?: string;
 }
 
 export interface DownloadResult {

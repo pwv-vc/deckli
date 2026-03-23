@@ -41,19 +41,15 @@ export function registerLoginCommand(program: Command): void {
         const spinner = ora("Opening browser...").start();
 
         if (source.login) {
-          spinner.succeed("Browser opened");
-          console.log(
-            pc.gray("\nLog in with the account that can access this deck. When done, press Enter here.\n")
-          );
-          await waitForEnter();
           await source.login(url.trim(), profileDir, { headless: false });
         } else {
-          await loginWithBrowser(url.trim(), profileDir, { headless: false });
+          const context = await loginWithBrowser(url.trim(), profileDir, { headless: false });
           spinner.succeed("Browser opened");
           console.log(
             pc.gray("\nLog in with the account that can access this deck. When done, press Enter here.\n")
           );
           await waitForEnter();
+          await context.close();
         }
 
         console.log(

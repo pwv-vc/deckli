@@ -1,8 +1,9 @@
 import type { DeckSource } from "../types.js";
+import { canvaSource } from "./canva.js";
 import { docsendSource } from "./docsend.js";
 
 /** All registered sources, in priority order for URL detection. */
-const SOURCES: DeckSource[] = [docsendSource];
+const SOURCES: DeckSource[] = [canvaSource, docsendSource];
 
 /** Default source when no URL match is found. */
 const DEFAULT_SOURCE: DeckSource = docsendSource;

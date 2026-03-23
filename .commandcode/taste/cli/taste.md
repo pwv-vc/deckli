@@ -25,4 +25,6 @@
 - Use minimal white, gray, and black colors for ASCII art banners. Confidence: 0.85
 - Check if package is publishable using `npx can-i-publish` before building or publishing. Confidence: 0.85
 - Add explicit `--json` option to each subcommand rather than reaching up to parent program opts. Confidence: 0.80
+- When adding login support for a new source (e.g. Canva), mirror all login options that existing sources already support — specifically `--email` — so the interface is consistent across sources. Confidence: 0.75
+- Implement cache management as a dedicated `cache clear <url>` subcommand (not a flag on the download command), so it is a distinct, discoverable operation that can be used independently of downloading. Confidence: 0.75
 - Add `"files": ["dist", "README.md"]` to package.json to prevent src/, tests, and large assets from being published. Confidence: 0.80

@@ -9,7 +9,7 @@
 
 **They shared a link. You wanted the content. Decks shouldn't be black boxes.**
 
-A TypeScript CLI that downloads presentation decks and extracts searchable text from slides. Default output includes an assembled PDF, OCR markdown with AI cleanup, AI post-processing analysis, slide images, and a complete bundle. Currently supports **DocSend** (default); built with a plugin architecture so additional sources (Google Slides, PitchDeck, Brieflink, etc.) can be added without touching the output pipeline. Inspired by [captivus/docsend-dl](https://github.com/captivus/docsend-dl); thanks to that project.
+A TypeScript CLI that downloads presentation decks and extracts searchable text from slides. Default output includes an assembled PDF, OCR markdown with AI cleanup, AI post-processing analysis, slide images, and a complete bundle. Currently supports **DocSend** and **Canva**; built with a plugin architecture so additional sources (Google Slides, PitchDeck, Brieflink, etc.) can be added without touching the output pipeline. Inspired by [captivus/docsend-dl](https://github.com/captivus/docsend-dl); thanks to that project.
 
 ## The Problem
 
@@ -76,12 +76,20 @@ deckrd https://docsend.com/view/XXXXXX
 
 ## Usage
 
+### Supported Sources
+
+- **DocSend** — `https://docsend.com/view/XXXXXX` or `https://dbx.docsend.com/view/XXXXXX`
+- **Canva** — `https://www.canva.com/design/DAHEThNWfBc/4LBwmcVLZhL1Sr-QiBhXkQ/edit` (no login required; uses thumbnail images)
+
 ### Download as PDF (default)
 
 ```bash
 deckrd https://docsend.com/view/XXXXXX
 deckrd https://dbx.docsend.com/view/XXXXXX
+deckrd https://www.canva.com/design/DAHEThNWfBc/4LBwmcVLZhL1Sr-QiBhXkQ/edit
 ```
+
+**Canva:** deckrd downloads Canva designs using thumbnail images (lower resolution than the original). The URL may include `?utm_source=...` parameters; they are automatically stripped. No login required.
 
 Output: everything for a deck goes under **`<parent>/<slug>/`**, where `parent` is the current directory by default (or the directory you pass with **`-o`**) and `slug` is the URL-derived DocSend slug (sanitized for the filesystem). Inside that folder you get **`{name}.pdf`**, OCR/cleaned **markdown**, AI post-processing outputs, a **`summary.json`** (paths, sizes, estimated AI costs, download timestamp, etc.), slide PNGs under **`images/`** (by default), and a **`{name}.zip`** containing those artifacts.
 
@@ -166,7 +174,7 @@ These match **`deckrd --help`** / **`deckrd download --help`** (wording may wrap
 
 ### Login (for private or email-gated decks)
 
-Login is **per deck**: each DocSend URL has its own saved session, so you can use different accounts for different decks.
+Login is **per deck**: each URL has its own saved session, so you can use different accounts for different decks.
 
 1. Run login with the deck URL you want to access:
 
@@ -191,6 +199,8 @@ deckrd --email you@company.com https://docsend.com/view/XXXXXX
 ```
 
 If DocSend sends a verification link, `--email` alone is not enough; use login or a headed browser as above.
+
+
 
 ### Logout
 
@@ -480,9 +490,10 @@ const SOURCES: DeckSource[] = [docsendSource, googleSource];
 
 ### Currently registered sources
 
-| id        | Name    | URL pattern            | Status                   |
-| --------- | ------- | ---------------------- | ------------------------ |
-| `docsend` | DocSend | `*.docsend.com/view/…` | ✅ Implemented (default) |
+| id        | Name    | URL pattern                                    | Status                   | Notes |
+| --------- | ------- | ---------------------------------------------- | ------------------------ | ----- |
+| `canva`   | Canva   | `canva.com/design/{designId}/{workspaceId}/…` | ✅ Implemented           | Uses thumbnail images (lower resolution) |
+| `docsend` | DocSend | `*.docsend.com/view/…`                         | ✅ Implemented (default) | Login required for private/email-gated decks |
 
 ## Post-Processing Plugin Architecture
 

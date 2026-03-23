@@ -1,8 +1,10 @@
 import {
+  copyFileSync,
   existsSync,
   mkdirSync,
   renameSync,
   rmSync,
+  statSync,
   unlinkSync,
   writeFileSync,
 } from "fs";
@@ -493,7 +495,40 @@ async function runPdfDownload(
     : getSlideCacheDir(deckInfo.slug ? `${deckInfo.sourceId}-${deckInfo.slug}` : deckInfo.title);
 
   let dlResult: DownloadResult;
-  if (useCachedOnly) {
+  const slugPdfPath = join(deckDir, `${deckInfo.title}.pdf`);
+  let pdfSize = 0;
+
+  if (deckInfo.directPdfPath) {
+    // High-quality PDF from Canva's native export — skip download + assemble.
+    // Still download thumbnails into cache for OCR when not already cached.
+    if (!json) spinner.succeed(`${CLI_ICONS_COLOR.pdf} Using Canva direct PDF export`);
+
+    const validImageUrls = deckInfo.imageUrls.filter(Boolean);
+    const useCachedThumbs = !options.force && dirHasAllSlides(cacheDir, deckInfo.slideCount);
+    if (validImageUrls.length > 0 && !useCachedThumbs) {
+      mkdirSync(cacheDir, { recursive: true });
+      spinner.start(`${CLI_ICONS_COLOR.download} Downloading slide images for OCR...`);
+      dlResult = await downloadSlides(deckInfo.imageUrls, cacheDir, {
+        concurrency: config.concurrency,
+        maxRetries: config.maxRetries,
+        onSlideDone: () => {},
+      });
+      spinner.succeed(`${CLI_ICONS_COLOR.success} Slide images downloaded`);
+      writeCacheMetadata(cacheDir, { slideCount: deckInfo.slideCount, title: deckInfo.title });
+    } else {
+      dlResult = {
+        successes: deckInfo.slideCount,
+        failures: 0,
+        totalBytes: totalSlideBytesInDir(cacheDir),
+        failedSlides: [],
+      };
+    }
+
+    // Copy the Canva-exported PDF to the output location
+    copyFileSync(deckInfo.directPdfPath, slugPdfPath);
+    pdfSize = statSync(slugPdfPath).size;
+    if (!json) spinner.succeed(`${CLI_ICONS_COLOR.success} PDF ready (Canva export)`);
+  } else if (useCachedOnly) {
     dlResult = {
       successes: deckInfo.slideCount,
       failures: 0,
@@ -537,9 +572,7 @@ async function runPdfDownload(
   }
   const summaryImagePaths = bundleImages ? bundledImagePaths : imagePaths;
 
-  const slugPdfPath = join(deckDir, `${deckInfo.title}.pdf`);
-  let pdfSize = 0;
-  if (imagePaths.length > 0) {
+  if (!deckInfo.directPdfPath && imagePaths.length > 0) {
     spinner.start(`${CLI_ICONS_COLOR.pdf} Assembling PDF...`);
     pdfSize = await assemblePdf(imagePaths, slugPdfPath);
     spinner.succeed(`${CLI_ICONS_COLOR.success} PDF assembled`);
